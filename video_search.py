@@ -9,14 +9,16 @@ import time
 from getpass import getpass
 import fetch_helpers
 
-PINECONE_API_KEY = getpass('Enter PINECONE_API_KEY')
-
-
-from sentence_transformers import SentenceTransformer
+# need to not have this publicly exposed
+PINECONE_API_KEY = "FAKE_KEY"
 
 import pinecone  # !pip install pinecone-client
 # import os
 from pinecone import Pinecone, ServerlessSpec
+
+# to bypass SSL problem on local run
+import ssl
+ssl._create_default_https_context = ssl._create_unverified_context
 
 class EndpointHandler():
     def __init__(self, path=""):
@@ -50,7 +52,7 @@ class EndpointHandler():
             A :obj:`dict`:. transcribed dict
         """
         # process input
-        print('data', data)
+        # print('data', data)
 
         # if "inputs" not in data:
         #     raise Exception(f"data is missing 'inputs' key which  EndpointHandler expects. Received: {data}"
@@ -218,7 +220,10 @@ def upload_transcripts_to_vector_db(transcripts_for_upload, pinecone_index, sent
     #   print(f'Uploaded Batches: {i} to {i_end}')
 
 def train_model(channel_url, model_id = "multi-qa-mpnet-base-dot-v1"):
-    video_urls = fetch_helpers.fetch_all_videos_yt(channel_url)
+    if channel_url == "demo":
+        video_urls = ["https://www.youtube.com/watch?v=w4CMaKF_IXI", "https://www.youtube.com/watch?v=PQtMTPhmQwM"]
+    else:
+        video_urls = fetch_helpers.fetch_all_videos_yt(channel_url)
     # check if change (set comparison)
     # test the handler
     handler = EndpointHandler(path="")
@@ -246,14 +251,9 @@ def train_model(channel_url, model_id = "multi-qa-mpnet-base-dot-v1"):
 
 def query_model(query, pinecone_index, sentence_transformer_model):
   encoded_query = sentence_transformer_model.encode(query).tolist()
-#   metadata_filter = { "video_id": {"$in": video_ids}} if video_ids else None
   # print(encoded_query)
-  # print(metadata_filter)
   return pinecone_index.query(vector=encoded_query, top_k=5,
                               include_metadata=True)
-#   return pinecone_index.query(vector=encoded_query, top_k=5,
-#                               include_metadata=True,
-#                               filter=metadata_filter)
 
 def query(query_phrase, channel_url, model_id = "multi-qa-mpnet-base-dot-v1"):
     index_id = "search-" + channel_url
@@ -262,15 +262,14 @@ def query(query_phrase, channel_url, model_id = "multi-qa-mpnet-base-dot-v1"):
     )
     pinecone_index = pc.Index(index_id)
     sentence_transformer_model = SentenceTransformer(model_id)
-    # query_phrase = "maple syrup"
     results = query_model(query_phrase, pinecone_index, sentence_transformer_model)
-    # query_phrase_2 = "crispy exterior"
-    # results_2 = query_model(query_phrase_2, ["w4CMaKF_IXI", "PQtMTPhmQwM"])
-    # results = query_model(query_phrase)
+    return results['matches']
 
 
-
-
+# train_model(channel_url="demo")
+# print(query("maple syrup", channel_url="demo"))
+# print("BREAK")
+# print(query("crispy exterior", channel_url="demo"))
 
 
 
