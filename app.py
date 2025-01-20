@@ -247,7 +247,7 @@ def train_model():
         if channel_url == "demo":
             video_urls = ["https://www.youtube.com/watch?v=w4CMaKF_IXI", "https://www.youtube.com/watch?v=PQtMTPhmQwM"]
         else:
-            video_urls = fetch_helpers.fetch_all_videos_yt(channel_url)
+            video_urls = fetch_all_videos_yt(channel_url)
         # filter out already processed videos
         new_videos = [url for url in video_urls if url not in PROCESSED_VIDEOS]
         if not new_videos:
