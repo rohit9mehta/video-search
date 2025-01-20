@@ -5,9 +5,11 @@ function App() {
       event.preventDefault();
       const channelUrl = event.target.channelURL.value;
       // Call backend API to trigger training
-      await fetch('/api/train', {
+      const e2ApiUrlTrain = 'http://3.20.204.32:5000/train';
+      await fetch(e2ApiUrlTrain, {
           method: 'POST',
-          body: JSON.stringify({ channelUrl }),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel_url: channelUrl }),
       });
   };
 
@@ -16,10 +18,10 @@ function App() {
     const queryPhrase = event.target.queryPhrase.value;
     const channelUrl = event.target.channelURL.value;
     // Call backend API to trigger query
-    await fetch('/api/query', {
-        method: 'GET',
-        body: JSON.stringify({ queryPhrase, channelUrl }),
-    });
+    const ec2ApiUrlQuery = `http://3.20.204.32:5000/query?query_phrase=${encodeURIComponent(queryPhrase)}&channel_url=${encodeURIComponent(channelUrl)}`;
+    const response = await fetch(ec2ApiUrlQuery)
+    const results = await response.json()
+    console.log('Query Results: ', results);
   };
   return (
     <>
