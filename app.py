@@ -11,14 +11,28 @@ from flask import Flask, request, jsonify
 import scrapetube
 import boto3
 import pinecone  # !pip install pinecone-client
-# import os
+import os
 from pinecone import Pinecone, ServerlessSpec
 import ssl
 import json
+from botocore.exceptions import NoCredentialsError
+import pickle
 
 app = Flask(__name__)
 # Mock database to store processed videos (use a database like DynamoDB in production)
 PROCESSED_VIDEOS = set()
+
+# S3 bucket configuration
+S3_BUCKET_NAME = "video-search-training-bucket"
+S3_REGION = "us-east-2"
+
+def get_aws_credentials():
+    client = boto3.client('secretsmanager', region_name='us-east-2')
+    secret_name = "my-aws-credentials-secret"
+
+    response = client.get_secret_value(SecretId=secret_name)
+    secrets = json.loads(response['SecretString'])
+    return secrets['aws_access_key_id'], secrets['aws_secret_access_key']
 
 def get_pinecone_api_key():
     client = boto3.client('secretsmanager', region_name='us-east-2')
@@ -27,6 +41,38 @@ def get_pinecone_api_key():
     response = client.get_secret_value(SecretId=secret_name)
     secret = json.loads(response['SecretString'])
     return secret['pinecone_api_key']
+
+# Initialize S3 client
+s3_client = boto3.client(
+    's3',
+    aws_access_key_id=get_aws_credentials()[0],
+    aws_secret_access_key=get_aws_credentials()[1],
+    region_name=S3_REGION
+)
+
+def upload_to_s3(file_path, s3_key=None):
+    """Uploads a file to the specified S3 bucket."""
+    if not s3_key:
+        # Derive the S3 key from the local file name
+        s3_key = os.path.basename(file_path)
+    try:
+        s3_client.upload_file(file_path, S3_BUCKET_NAME, s3_key)
+        print(f"Uploaded {file_path} to {S3_BUCKET_NAME}/{s3_key}")
+    except NoCredentialsError:
+        print("Credentials not available.")
+    except Exception as e:
+        print(f"Error uploading to S3: {e}")
+
+def download_from_s3(s3_key, local_path=None):
+    """Downloads a file from S3 to the specified local path."""
+    if not local_path:
+        # Derive the local file name from the S3 key
+        local_path = os.path.basename(s3_key)
+    try:
+        s3_client.download_file(S3_BUCKET_NAME, s3_key, local_path)
+        print(f"Downloaded {S3_BUCKET_NAME}/{s3_key} to {local_path}")
+    except Exception as e:
+        print(f"Error downloading from S3: {e}")
 
 # to bypass SSL problem on local run
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -46,22 +92,30 @@ class EndpointHandler():
         WHISPER_MODEL_NAME = "tiny.en"
         SENTENCE_TRANSFORMER_MODEL_NAME = "multi-qa-mpnet-base-dot-v1"
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f'whisper will use: {device}')
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f'whisper will use: {self.device}')
 
-        t0 = time.time()
-        self.whisper_model = whisper.load_model(WHISPER_MODEL_NAME).to(device)
-        t1 = time.time()
+        # Load Whisper Model
+        whisper_path = os.path.join(path, "whisper_model.pt")
+        if os.path.exists(whisper_path):
+            print("Loading Whisper model from S3...")
+            download_from_s3("models/whisper_model.pt", whisper_path)
+            self.whisper_model = whisper.load_model(whisper_path).to(self.device)
+        else:
+            print("Loading Whisper model locally...")
+            self.whisper_model = whisper.load_model(WHISPER_MODEL_NAME).to(self.device)
+            self.whisper_model.save(whisper_path)
+            upload_to_s3(whisper_path, "models/whisper_model.pt")
 
-        total = t1 - t0
-        print(f'Finished loading whisper_model in {total} seconds')
-
-        t0 = time.time()
-        self.sentence_transformer_model = SentenceTransformer(SENTENCE_TRANSFORMER_MODEL_NAME)
-        t1 = time.time()
-
-        total = t1 - t0
-        print(f'Finished loading sentence_transformer_model in {total} seconds')
+        transformer_path = os.path.join(path, "sentence_transformer")
+        if os.path.exists(transformer_path):
+            print("Loading SentenceTransformer model from S3...")
+            download_from_s3("models/sentence_transformer", transformer_path)
+        else:
+            print("Loading SentenceTransformer model locally...")
+            self.sentence_transformer_model = SentenceTransformer(SENTENCE_TRANSFORMER_MODEL_NAME)
+            self.sentence_transformer_model.save(transformer_path)
+            upload_to_s3(transformer_path, "models/sentence_transformer")
 
     def __call__(self, data: Dict[str, str]) -> Dict:
         """
@@ -141,6 +195,25 @@ class EndpointHandler():
         # postprocess the prediction
         return {"transcript": transcript, 'video': video_info}
 
+    def transcribe_video(self, video_url):
+        decode_options = {"language": "en", "verbose": True}
+        yt = YouTube(video_url)
+        video_info = {
+            'id': yt.video_id,
+            'thumbnail': yt.thumbnail_url,
+            'title': yt.title,
+            'views': yt.views,
+            'length': yt.length,
+            'url': f"https://www.youtube.com/watch?v={yt.video_id}"
+        }
+        stream = yt.streams.filter(only_audio=True)[0]
+        path_to_audio = f"{yt.video_id}.mp3"
+        stream.download(filename=path_to_audio)
+        transcript = self.whisper_model.transcribe(path_to_audio, **decode_options)
+        for segment in transcript['segments']:
+            segment.pop('tokens', None)
+        return {"transcript": transcript, 'video': video_info}
+    
     def encode_sentences(self, transcripts, batch_size=64):
         """
         Encoding all of our segments at once or storing them locally would require too much compute or memory.
@@ -252,11 +325,17 @@ def train_model():
         new_videos = [url for url in video_urls if url not in PROCESSED_VIDEOS]
         if not new_videos:
             return jsonify({"message": "No new videos to process"}), 200
-        # test the handler
+        # Process each video
         handler = EndpointHandler(path="")
         payload = {"video_urls": new_videos, "trying_live": True}
-        payload_pred = handler(payload)
-        sentence_transformer_model = SentenceTransformer("multi-qa-mpnet-base-dot-v1")
+        processed_data = handler(payload)
+
+        # Pinecone integration
+        sentence_transformer_model = handler.sentence_transformer_model
+        model_path = "trained_model_" + channel_url
+        sentence_transformer_model.save(model_path)
+        upload_to_s3(model_path, "models/trained_model.zip")
+        
         dimensions = sentence_transformer_model.get_sentence_embedding_dimension()
         index_id = "search-" + channel_url
         PINECONE_API_KEY = get_pinecone_api_key()
@@ -275,7 +354,9 @@ def train_model():
         )
         pinecone_index = pc.Index(index_id)
         # pinecone_index.describe_index_stats()
-        upload_transcripts_to_vector_db(payload_pred.get('encoded_segments'), pinecone_index, sentence_transformer_model)
+        upload_transcripts_to_vector_db(processed_data.get('encoded_segments'), pinecone_index, sentence_transformer_model)
+
+        # Update processed videos
         PROCESSED_VIDEOS.update(new_videos)
         return jsonify({
             "message": f"Processed {len(new_videos)} new video(s). Model retrained."
@@ -307,7 +388,7 @@ def query_model():
         pinecone_index = pc.Index(index_id)
         sentence_transformer_model = SentenceTransformer("multi-qa-mpnet-base-dot-v1")
         results = query_pinecone_model(query_phrase, pinecone_index, sentence_transformer_model)
-        return results['matches']
+        return jsonify(results['matches'])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
