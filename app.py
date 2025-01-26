@@ -26,14 +26,6 @@ PROCESSED_VIDEOS = set()
 S3_BUCKET_NAME = "video-search-training-bucket"
 S3_REGION = "us-east-2"
 
-def get_aws_credentials():
-    client = boto3.client('secretsmanager', region_name='us-east-2')
-    secret_name = "my-aws-credentials-secret"
-
-    response = client.get_secret_value(SecretId=secret_name)
-    secrets = json.loads(response['SecretString'])
-    return secrets['aws_access_key_id'], secrets['aws_secret_access_key']
-
 def get_pinecone_api_key():
     client = boto3.client('secretsmanager', region_name='us-east-2')
     secret_name = "pinecone-secret"
@@ -45,8 +37,6 @@ def get_pinecone_api_key():
 # Initialize S3 client
 s3_client = boto3.client(
     's3',
-    aws_access_key_id=get_aws_credentials()[0],
-    aws_secret_access_key=get_aws_credentials()[1],
     region_name=S3_REGION
 )
 
