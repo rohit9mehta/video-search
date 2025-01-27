@@ -100,7 +100,7 @@ class EndpointHandler():
         else:
             print("Loading Whisper model locally...")
             self.whisper_model = whisper.load_model(WHISPER_MODEL_NAME).to(self.device)
-            self.whisper_model.save(whisper_path)
+            # self.whisper_model.save(whisper_path)
             upload_to_s3(whisper_path, "models/whisper_model.pt")
 
         transformer_path = os.path.join(path, "sentence_transformer")
