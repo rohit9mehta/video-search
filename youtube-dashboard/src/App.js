@@ -10,7 +10,7 @@ function App() {
     const channelUrl = event.target.channelURL.value;
     try {
         // Call backend API to trigger training
-        const e2ApiUrlTrain = 'https://3.20.204.32:5000/train';
+        const e2ApiUrlTrain = 'http://3.20.204.32:5000/train';
         const response = await fetch(e2ApiUrlTrain, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -29,7 +29,7 @@ function App() {
     const channelUrl = event.target.channelURL.value;
     try {
         // Call backend API to trigger query
-        const ec2ApiUrlQuery = `https://3.20.204.32:5000/query?query_phrase=${encodeURIComponent(queryPhrase)}&channel_url=${encodeURIComponent(channelUrl)}`;
+        const ec2ApiUrlQuery = `http://3.20.204.32:5000/query?query_phrase=${encodeURIComponent(queryPhrase)}&channel_url=${encodeURIComponent(channelUrl)}`;
         const response = await fetch(ec2ApiUrlQuery)
         const results = await response.json()
         // Save the results to state

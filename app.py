@@ -8,6 +8,7 @@ from pytubefix import YouTube
 import time
 from getpass import getpass
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import scrapetube
 import boto3
 import pinecone  # !pip install pinecone-client
@@ -19,12 +20,17 @@ from botocore.exceptions import NoCredentialsError
 import pickle
 
 app = Flask(__name__)
+CORS(app)
 # Mock database to store processed videos (use a database like DynamoDB in production)
 PROCESSED_VIDEOS = set()
 
 # S3 bucket configuration
 S3_BUCKET_NAME = "video-search-training-bucket"
 S3_REGION = "us-east-2"
+
+@app.route('/')
+def home():
+    return "Hello, CORS is configured!"
 
 def get_pinecone_api_key():
     client = boto3.client('secretsmanager', region_name='us-east-2')
