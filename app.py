@@ -358,6 +358,7 @@ def train_model():
             "message": f"Processed {len(new_videos)} new video(s). Model retrained."
         })
     except Exception as e:
+        print("Error in /train endpoint:", e)  # Debug print
         return jsonify({"error": str(e)}), 500
 
 
