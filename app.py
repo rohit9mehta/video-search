@@ -74,9 +74,9 @@ def download_from_s3(s3_key, local_path=None):
 ssl._create_default_https_context = ssl._create_unverified_context
 
 # gather all YouTube video links from channel
-def fetch_all_videos_yt(channel_url):
+def fetch_all_videos_yt(channel_id):
     # TODO
-    videos = scrapetube.get_channel(channel_url=channel_url)
+    videos = scrapetube.get_channel(channel_id)
     # need to preface each with 'https://www.youtube.com/watch?v=' 
     return [video['videoId'] for video in videos]
 
@@ -92,16 +92,18 @@ class EndpointHandler():
         print(f'whisper will use: {self.device}')
 
         # Load Whisper Model
-        whisper_path = os.path.join(path, "whisper_model.pt")
-        if os.path.exists(whisper_path):
-            print("Loading Whisper model from S3...")
-            download_from_s3("models/whisper_model.pt", whisper_path)
-            self.whisper_model = whisper.load_model(whisper_path).to(self.device)
-        else:
-            print("Loading Whisper model locally...")
-            self.whisper_model = whisper.load_model(WHISPER_MODEL_NAME).to(self.device)
-            # self.whisper_model.save(whisper_path)
-            upload_to_s3(whisper_path, "models/whisper_model.pt")
+        # whisper_path = os.path.join(path, "whisper_model.pt")
+        # if os.path.exists(whisper_path):
+        #     print("Loading Whisper model from S3...")
+        #     download_from_s3("models/whisper_model.pt", whisper_path)
+        #     self.whisper_model = whisper.load_model(whisper_path).to(self.device)
+        # else:
+        #     print("Loading Whisper model locally...")
+        #     self.whisper_model = whisper.load_model(WHISPER_MODEL_NAME).to(self.device)
+        #     # self.whisper_model.save(whisper_path)
+        #     upload_to_s3(whisper_path, "models/whisper_model.pt")
+        print("Loading Whisper model locally...")
+        self.whisper_model = whisper.load_model(WHISPER_MODEL_NAME).to(self.device)
 
         transformer_path = os.path.join(path, "sentence_transformer")
         if os.path.exists(transformer_path):
