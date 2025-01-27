@@ -175,7 +175,7 @@ class EndpointHandler():
             }],
             'extractor_args': {
                 'youtube': {
-                    'po_token': 'lpcm'  # or 'chunky', 'raw1', etc. per the wiki
+                    'po_token': 'chunky'  # or 'lpcm', 'raw1', etc. per the wiki
                 }
             }
         }
