@@ -5,7 +5,7 @@ from tqdm import tqdm
 import whisper
 import torch
 from pytubefix import YouTube
-import time
+import yt_dlp
 from getpass import getpass
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -163,59 +163,34 @@ class EndpointHandler():
             }
 
     def transcribe_video(self, video_url):
-        decode_options = {
-            # Set language to None to support multilingual,
-            # but it will take longer to process while it detects the language.
-            # Realized this by running in verbose mode and seeing how much time
-            # was spent on the decoding language step
-            "language": "en",
-            "verbose": True
-        }
-        yt = YouTube(video_url, use_po_token=True)
-        video_info = {
-            'id': yt.video_id,
-            'thumbnail': yt.thumbnail_url,
-            'title': yt.title,
-            'views': yt.views,
-            'length': yt.length,
-            # Althhough, this might seem redundant since we already have id
-            # but it allows the link to the video be accessed in 1-click in the API response
-            'url': f"https://www.youtube.com/watch?v={yt.video_id}"
-        }
-        stream = yt.streams.filter(only_audio=True)[0]
-        path_to_audio = f"{yt.video_id}.mp3"
-        stream.download(filename=path_to_audio)
-        t0 = time.time()
-        transcript = self.whisper_model.transcribe(path_to_audio, **decode_options)
-        t1 = time.time()
-        for segment in transcript['segments']:
-            # Remove the tokens array, it makes the response too verbose
-            segment.pop('tokens', None)
-
-        total = t1 - t0
-        print(f'Finished transcription in {total} seconds')
-
-        # postprocess the prediction
-        return {"transcript": transcript, 'video': video_info}
-
-    def transcribe_video(self, video_url):
         decode_options = {"language": "en", "verbose": True}
-        yt = YouTube(video_url, use_po_token=True)
-        video_info = {
-            'id': yt.video_id,
-            'thumbnail': yt.thumbnail_url,
-            'title': yt.title,
-            'views': yt.views,
-            'length': yt.length,
-            'url': f"https://www.youtube.com/watch?v={yt.video_id}"
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': '%(id)s.%(ext)s',
+            'noplaylist': True,
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }]
         }
-        stream = yt.streams.filter(only_audio=True)[0]
-        path_to_audio = f"{yt.video_id}.mp3"
-        stream.download(filename=path_to_audio)
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=True)
+        video_id = info.get('id')
+        path_to_audio = f'{video_id}.mp3'  # after FFmpegExtractAudio conversion
+        video_info = {
+            'id': video_id,
+            'thumbnail': info.get('thumbnail'),
+            'title': info.get('title'),
+            'views': info.get('view_count'),
+            'length': info.get('duration'),
+            'url': f'https://www.youtube.com/watch?v={video_id}'
+        }
         transcript = self.whisper_model.transcribe(path_to_audio, **decode_options)
         for segment in transcript['segments']:
             segment.pop('tokens', None)
         return {"transcript": transcript, 'video': video_info}
+    
     
     def encode_sentences(self, transcripts, batch_size=64):
         """
