@@ -74,11 +74,11 @@ def download_from_s3(s3_key, local_path=None):
 ssl._create_default_https_context = ssl._create_unverified_context
 
 # gather all YouTube video links from channel
-def fetch_all_videos_yt(channel_id):
+def fetch_all_videos_yt(channel_url):
     # TODO
-    videos = scrapetube.get_channel(channel_id)
+    videos = scrapetube.get_channel(channel_url=channel_url)
     # need to preface each with 'https://www.youtube.com/watch?v=' 
-    return [video['videoId'] for video in videos]
+    return ['https://www.youtube.com/watch?v=' + video['videoId'] for video in videos]
 
 # print(fetch_all_videos_yt("https://www.youtube.com/@MusicForTheSoul11/"))
 
@@ -398,7 +398,6 @@ if __name__ == '__main__':
 # print(query("maple syrup", channel_url="demo"))
 # print("BREAK")
 # print(query("crispy exterior", channel_url="demo"))
-
 
 
 
