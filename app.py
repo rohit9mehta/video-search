@@ -105,16 +105,20 @@ class EndpointHandler():
         print("Loading Whisper model locally...")
         self.whisper_model = whisper.load_model(WHISPER_MODEL_NAME).to(self.device)
 
-        transformer_path = os.path.join(path, "sentence_transformer_dir.zip")
-        if os.path.exists(transformer_path):
-            print("Loading SentenceTransformer model from S3...")
-            download_from_s3("models/sentence_transformer", transformer_path)
-        else:
-            print("Loading SentenceTransformer model locally...")
-            self.sentence_transformer_model = SentenceTransformer(SENTENCE_TRANSFORMER_MODEL_NAME)
-            self.sentence_transformer_model.save(transformer_path)
-            shutil.make_archive("sentence_transformer_dir", 'zip', "sentence_transformer")
-            upload_to_s3(transformer_path, "models/sentence_transforme.zip")
+        # transformer_path = os.path.join(path, "sentence_transformer_dir.zip")
+        # if os.path.exists(transformer_path):
+        #     print("Loading SentenceTransformer model from S3...")
+        #     download_from_s3("models/sentence_transformer.zip", transformer_path)
+        #     shutil.unpack_archive("sentence_transformer_dir.zip", "sentence_transformer")
+        #     self.sentence_transformer_model = SentenceTransformer("sentence_transformer")
+        # else:
+        #     print("Loading SentenceTransformer model locally...")
+        #     self.sentence_transformer_model = SentenceTransformer(SENTENCE_TRANSFORMER_MODEL_NAME)
+        #     self.sentence_transformer_model.save(transformer_path)
+        #     shutil.make_archive("models/sentence_transformer", 'zip', "sentence_transformer")
+        #     upload_to_s3(transformer_path, "models/sentence_transformer.zip")
+        print("Loading SentenceTransformer model locally...")
+        self.sentence_transformer_model = SentenceTransformer(SENTENCE_TRANSFORMER_MODEL_NAME)
 
     def __call__(self, data: Dict[str, str]) -> Dict:
         """
