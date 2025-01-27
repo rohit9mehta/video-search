@@ -172,7 +172,12 @@ class EndpointHandler():
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
-            }]
+            }],
+            'extractor_args': {
+                'youtube': {
+                    'po_token': 'lpcm'  # or 'chunky', 'raw1', etc. per the wiki
+                }
+            }
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
