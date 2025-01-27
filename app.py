@@ -390,7 +390,7 @@ def query_model():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5000, debug=true)
 # train_model(channel_url="demo")
 # print(query("maple syrup", channel_url="demo"))
 # print("BREAK")
