@@ -171,7 +171,7 @@ class EndpointHandler():
             "language": "en",
             "verbose": True
         }
-        yt = YouTube(video_url)
+        yt = YouTube(video_url, use_po_token=True)
         video_info = {
             'id': yt.video_id,
             'thumbnail': yt.thumbnail_url,
@@ -200,7 +200,7 @@ class EndpointHandler():
 
     def transcribe_video(self, video_url):
         decode_options = {"language": "en", "verbose": True}
-        yt = YouTube(video_url)
+        yt = YouTube(video_url, use_po_token=True)
         video_info = {
             'id': yt.video_id,
             'thumbnail': yt.thumbnail_url,
