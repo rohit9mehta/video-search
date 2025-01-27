@@ -173,9 +173,10 @@ class EndpointHandler():
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
+            'cookiefile': 'cookies.txt',
             'extractor_args': {
                 'youtube': {
-                    'po_token': 'chunky'  # or 'lpcm', 'raw1', etc. per the wiki
+                    'po_token': ['WEB_TV+chunky', 'WEB_TV+raw1']
                 }
             }
         }
