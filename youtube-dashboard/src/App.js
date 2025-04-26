@@ -5,15 +5,17 @@ function App() {
 
   const [message, setMessage] = React.useState(""); // State to store the API response
   const [queryResults, setQueryResults] = React.useState([]); // State for query results
+  const backendUrl = 'https://aivideo.planeteria.com';
   const handleSubmit = async (event) => {
     event.preventDefault();
     const channelUrl = event.target.channelURL.value;
     try {
+        const e2ApiUrlTrain = 'https://aivideo.planeteria.com/api/train';
         // Call backend API to trigger training
-        const e2ApiUrlTrain = 'http://3.20.204.32:5000/train';
         const response = await fetch(e2ApiUrlTrain, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ channel_url: channelUrl }),
         });
         const data = await response.json();
@@ -29,8 +31,16 @@ function App() {
     const channelUrl = event.target.channelURL.value;
     try {
         // Call backend API to trigger query
-        const ec2ApiUrlQuery = `http://3.20.204.32:5000/query?query_phrase=${encodeURIComponent(queryPhrase)}&channel_url=${encodeURIComponent(channelUrl)}`;
-        const response = await fetch(ec2ApiUrlQuery)
+        const ec2ApiUrlQuery = `https://aivideo.planeteria.com/api/query?query_phrase=${encodeURIComponent(queryPhrase)}&channel_url=${encodeURIComponent(channelUrl)}`;
+        const response = await fetch(ec2ApiUrlQuery, {
+          credentials: 'include'
+        });
+
+        if (response.status === 401) {
+          alert("You are not authenticated. Redirecting to login...");
+          window.location.href = `${backendUrl}/login`;  // Redirect to login page
+          return;
+        }
         const results = await response.json()
         // Save the results to state
         setQueryResults(results || []);
@@ -38,6 +48,7 @@ function App() {
         setQueryResults([{ error: "Error occurred during query. Please try again." }]);
     }
   };
+
   return (
     <div className="App">
       {/* Training Form */}

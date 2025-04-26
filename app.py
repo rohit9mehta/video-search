@@ -7,7 +7,7 @@ from tqdm import tqdm
 from pytubefix import YouTube
 # import yt_dlp
 from getpass import getpass
-from flask import Flask, redirect, request, session, url_for
+from flask import Flask, redirect, request, session, url_for, jsonify
 from flask_cors import CORS
 import scrapetube
 import boto3
@@ -16,24 +16,34 @@ import os
 from pinecone import Pinecone, ServerlessSpec
 import ssl
 import json
-from botocore.exceptions import NoCredentialsError
 import shutil
 import random
 import time
 import requests
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from google_auth_oauthlib.flow import Flow
-from googleapiclient.discovery import build
-from google.oauth2.credentials import Credentials
 import os
+from datetime import datetime
+import logging
+import sys
+import re
+from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api.proxies import WebshareProxyConfig
+from threading import Thread
 
 app = Flask(__name__)
+app.logger.addHandler(logging.StreamHandler(sys.stdout))
+# Add file handler for logging
+log_file_handler = logging.FileHandler('app.log')
+log_file_handler.setLevel(logging.DEBUG)
+app.logger.addHandler(log_file_handler)
+app.logger.setLevel(logging.DEBUG)
 app.secret_key = 'YOUR_SECRET_KEY'  # Use a secure, random key
+app.config['SESSION_COOKIE_SECURE'] = True  # For HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'  # Only for testing on HTTP
 
-CORS(app)
+CORS(app, supports_credentials=True, origins="https://aivideo.planeteria.com")
 # Mock database to store processed videos (use a database like DynamoDB in production)
 PROCESSED_VIDEOS = set()
 
@@ -45,116 +55,34 @@ tokens_table = dynamodb.Table('UserTokens')
 S3_BUCKET_NAME = "video-search-training-bucket"
 S3_REGION = "us-east-2"
 
-def get_google_client_secrets():
-    client = boto3.client('secretsmanager', region_name='us-east-2')
-    response = client.get_secret_value(SecretId='google-client-secrets')
-    return json.loads(response['SecretString'])
-
-# Scopes needed for accessing captions
-CLIENT_SECRETS = get_google_client_secrets()
-SCOPES = ['https://www.googleapis.com/auth/youtube.force-ssl']
 
 @app.route('/')
 def home():
     return "Hello, CORS is configured!"
 
-# Step 1: Login Route
-@app.route('/login')
-def login():
-    flow = Flow.from_client_secrets_file(
-        CLIENT_SECRETS,
-        scopes=SCOPES,
-        redirect_uri='http://localhost:5000/oauth2callback'
-    )
-    auth_url, state = flow.authorization_url(
-        access_type='offline',
-        include_granted_scopes='true'
-    )
-    session['state'] = state
-    return redirect(auth_url)
-
-# Step 2: OAuth Callback
-@app.route('/oauth2callback')
-def oauth2callback():
-    flow = Flow.from_client_secrets_file(
-        CLIENT_SECRETS,
-        scopes=SCOPES,
-        redirect_uri='http://localhost:5000/oauth2callback'
-    )
-    flow.fetch_token(authorization_response=request.url)
-    
-    credentials = flow.credentials
-
-    user_info = get_user_info(credentials)
-    # Store tokens securely in DynamoDB
-    tokens_table.put_item(Item={
-        'user_id': user_info['email'],
-        'token': credentials.token,
-        'refresh_token': credentials.refresh_token,
-        'token_uri': credentials.token_uri,
-        'client_id': credentials.client_id,
-        'client_secret': credentials.client_secret,
-        'scopes': credentials.scopes,
-        'expiry': credentials.expiry.isoformat()
-    })
-    
-    return jsonify({"message": "Authentication successful!", "user": user_info})
-
-def get_user_info(credentials):
-    youtube = build('youtube', 'v3', credentials=credentials)
-    response = youtube.channels().list(part='snippet', mine=True).execute()
-    return response['items'][0]['snippet']
-
-def get_stored_credentials(user_id):
-    response = tokens_table.get_item(Key={'user_id': user_id})
-    if 'Item' not in response:
-        return None
-
-    data = response['Item']
-    credentials = Credentials(
-        token=data['token'],
-        refresh_token=data['refresh_token'],
-        token_uri=data['token_uri'],
-        client_id=data['client_id'],
-        client_secret=data['client_secret'],
-        scopes=data['scopes']
-    )
-
-    # Check if the token is expired
-    if datetime.fromisoformat(data['expiry']) <= datetime.utcnow():
-        try:
-            credentials.refresh(boto3.Session())  # Refresh the token
-            # Update DynamoDB with the new token
-            tokens_table.update_item(
-                Key={'user_id': user_id},
-                UpdateExpression="SET token = :t, expiry = :e",
-                ExpressionAttributeValues={
-                    ':t': credentials.token,
-                    ':e': credentials.expiry.isoformat()
-                }
-            )
-        except Exception as e:
-            print(f"Error refreshing token for {user_id}: {e}")
-            return None
-
-    return credentials
-
-# # Fetch API key from AWS Secrets Manager
-# def get_youtube_api_key():
-#     client = boto3.client('secretsmanager', region_name='us-east-2')
-#     secret_name = "youtube-data-api-key"
-
-#     response = client.get_secret_value(SecretId=secret_name)
-#     secret = json.loads(response['SecretString'])
-#     return secret['youtube_api_key']
 
 def get_pinecone_api_key():
-    client = boto3.client('secretsmanager', region_name='us-east-2')
-    secret_name = "pinecone-secret"
-
-    response = client.get_secret_value(SecretId=secret_name)
-    secret = json.loads(response['SecretString'])
-    return secret['pinecone_api_key']
+    try:
+        client = boto3.client('secretsmanager', region_name='us-east-2')
+        
+        # List all secrets and their ARNs
+        secrets = client.list_secrets()
+        app.logger.debug("Available secrets:")
+        for secret in secrets['SecretList']:
+            app.logger.debug(f"Name: {secret['Name']}, ARN: {secret['ARN']}")
+        
+        secret_name = "pinecone-secret"
+        app.logger.debug(f"Attempting to access secret: {secret_name}")
+        
+        response = client.get_secret_value(SecretId=secret_name)
+        secret = json.loads(response['SecretString'])
+        return secret['pinecone_api_key']
+    except Exception as e:
+        app.logger.error(f"Error type: {type(e)}")
+        app.logger.error(f"Error message: {str(e)}")
+        import traceback
+        app.logger.error(f"Full traceback: {traceback.format_exc()}")
+        raise
 
 # Initialize S3 client
 s3_client = boto3.client(
@@ -162,38 +90,38 @@ s3_client = boto3.client(
     region_name=S3_REGION
 )
 
-# to bypass SSL problem on local run
-ssl._create_default_https_context = ssl._create_unverified_context
-
 def fetch_all_videos_yt(channel_url):
     # TODO
-    videos = scrapetube.get_channel(channel_url=channel_url)
+    videos = list(scrapetube.get_channel(channel_url=channel_url))[:5]
     # need to preface each with 'https://www.youtube.com/watch?v=' 
     return [video['videoId'] for video in videos]
 # print(fetch_all_videos_yt("https://www.youtube.com/@rohitmehta5258"))
 
 # Get captions for a given YouTube video
-def get_captions(video_id, credentials):
+def get_captions(video_id):
     try:
-        creds = get_stored_credentials(user_id)
-        if not creds:
-            return redirect('/login')  # Redirect if not authorized
-        youtube = build('youtube', 'v3', credentials=credentials)
-        # Get captions list
-        captions = youtube.captions().list(
-            part='id,snippet',
-            videoId=video_id
-        ).execute()
-
-        if captions['items']:
-            caption_id = captions['items'][0]['id']
-            # Download captions
-            caption = youtube.captions().download(
-                id=caption_id,
-                tfmt='srt'
-            ).execute()
-            return caption
+        ytt_api = YouTubeTranscriptApi(
+            proxy_config=WebshareProxyConfig(
+                proxy_username="rqdaovtb",
+                proxy_password="oufjkm011cad",
+            )
+        )
+        transcript = ytt_api.fetch(video_id, languages=['en'])
+        if transcript:
+            # Convert transcript to SRT-like format for compatibility with existing code
+            srt_content = []
+            for i, snippet in enumerate(transcript.snippets, 1):
+                start = snippet.start
+                end = start + snippet.duration
+                start_str = f"{int(start // 3600):02d}:{int((start % 3600) // 60):02d}:{int(start % 60):02d},{int((start % 1) * 1000):03d}"
+                end_str = f"{int(end // 3600):02d}:{int((end % 3600) // 60):02d}:{int(end % 60):02d},{int((end % 1) * 1000):03d}"
+                srt_content.append(f"{i}")
+                srt_content.append(f"{start_str} --> {end_str}")
+                srt_content.append(snippet.text)
+                srt_content.append("")
+            return "\n".join(srt_content)
         else:
+            print(f"No transcripts found for video {video_id}, skipping.")
             return None
     except Exception as e:
         print(f"Error fetching captions for video {video_id}: {e}")
@@ -211,16 +139,14 @@ class EndpointHandler():
         encoded_segments = []
 
         for video_url in video_urls:
-            video_id = video_url.split("v=")[-1]
-            captions = get_captions(video_id, credentials)
+            video_id = video_url.split("v=")[-1] if "v=" in video_url else video_url
+            captions = get_captions(video_id)
 
             if captions:
                 print(f"Processing captions for {video_id}")
                 encoded_segments.extend(self.process_captions(captions, video_id))
             else:
-                print(f"No captions found for {video_id}")
-                # transcript_data = self.transcribe_video(video_url)
-                # encoded_segments.extend(self.encode_sentences(self.combine_transcripts([transcript_data])))
+                print(f"No captions found for {video_id}, skipping to next video")
         return {"encoded_segments": encoded_segments}
     
     def encode_sentences(self, transcripts, batch_size=64):
@@ -285,8 +211,12 @@ class EndpointHandler():
     def convert_timestamp_to_seconds(self, timestamp):
         """
         Converts SRT timestamp format (00:01:23,456 or 00:01:23) to seconds.
+        Handles timestamps with --> separator.
         """
         try:
+            # Extract start timestamp if --> is present
+            if '-->' in timestamp:
+                timestamp = timestamp.split('-->')[0].strip()
             if ',' in timestamp:
                 h, m, s = timestamp.split(":")
                 s, ms = s.split(",")
@@ -308,7 +238,11 @@ def upload_transcripts_to_vector_db(transcripts_for_upload, pinecone_index, sent
       i_end = min(len(transcripts_for_upload)-1, i+batch_size)
       # extract the metadata like text, start/end positions, etc
       batch_meta = [{
-          **transcripts_for_upload[x]
+          'id': transcripts_for_upload[x]['id'],
+          'video_id': transcripts_for_upload[x]['video_id'],
+          'start': transcripts_for_upload[x]['start'],
+          'text': transcripts_for_upload[x]['text'],
+          'url': transcripts_for_upload[x]['url']
       } for x in range(i, i_end)]
       # extract only text to be encoded by embedding model
       batch_text = [
@@ -327,55 +261,112 @@ def upload_transcripts_to_vector_db(transcripts_for_upload, pinecone_index, sent
       pinecone_index.upsert(to_upsert)
     #   print(f'Uploaded Batches: {i} to {i_end}')
 
-@app.route('/train', methods=['POST'])
+def sanitize_index_name(url):
+    """Convert a URL into a valid Pinecone index name."""
+    # Remove common URL parts
+    url = url.replace('https://', '').replace('http://', '').replace('www.', '')
+    # Remove everything after the first slash
+    url = url.split('/')[0]
+    # Replace invalid characters with dash
+    url = re.sub(r'[^a-z0-9-]', '-', url.lower())
+    # Ensure it starts with a letter (Pinecone requirement)
+    if not url[0].isalpha():
+        url = 'idx-' + url
+    # Truncate if too long (Pinecone has a length limit)
+    return url[:62]
+
+@app.route('/api/train', methods=['POST'])
 def train_model(demo_url = None):
-    try:
-        user_id = session.get('user_id')
-        if not user_id:
-            return jsonify({"error": "Authentication required."}), 401
-        credentials = get_stored_credentials(user_id)
-        if not credentials:
-            return jsonify({"error": "Invalid or expired token."}), 401
+    try:      
+        start_time = time.time()
+        print(f"Starting train_model at {datetime.now()}")
         # fetch videos
         if demo_url and demo_url == "demo":
             video_urls = ["w4CMaKF_IXI", "PQtMTPhmQwM"]
+            index_id = "demo-index"
         else:
             data = request.get_json()
             channel_url = data.get('channel_url')
+            print(f"Fetching videos for channel {channel_url} at {time.time() - start_time:.2f} seconds")
             video_urls = fetch_all_videos_yt(channel_url)
+            print(f"Fetched {len(video_urls)} videos at {time.time() - start_time:.2f} seconds")
+            # Sanitize the channel URL for use as index name
+            index_id = sanitize_index_name(channel_url)
+            
+        print(f"Using Pinecone index name: {index_id} at {time.time() - start_time:.2f} seconds")  # Debug print
+        
         # filter out already processed videos
         new_videos = [url for url in video_urls if url not in PROCESSED_VIDEOS]
+        print(f"Filtered to {len(new_videos)} new videos at {time.time() - start_time:.2f} seconds")
         if not new_videos:
+            print(f"No new videos to process, returning at {time.time() - start_time:.2f} seconds")
             return jsonify({"message": "No new videos to process"}), 200
-        # Process each video
+            
+        # Process each video asynchronously
+        print(f"Starting asynchronous processing for {len(new_videos)} videos at {time.time() - start_time:.2f} seconds")
         handler = EndpointHandler(path="")
         payload = {"video_urls": new_videos}
-        processed_data = handler(payload)
-        # Pinecone integration  
-        dimensions = handler.sentence_transformer_model.get_sentence_embedding_dimension()
-        index_id = "search-" + channel_url
-        PINECONE_API_KEY = get_pinecone_api_key()
-        pc = Pinecone(
-            api_key=PINECONE_API_KEY
-        )
-        if index_id not in pc.list_indexes():
-            pc.create_index(
-                name=index_id,
-                dimension=dimensions,
-                metric="dotproduct",
-                spec=ServerlessSpec(cloud="aws",region="us-east-1")
-            )
-        pinecone_index = pc.Index(index_id)
-        # pinecone_index.describe_index_stats()
-        upload_transcripts_to_vector_db(processed_data["encoded_segments"], pinecone_index, handler.sentence_transformer_model)
-
-        # Update processed videos
-        PROCESSED_VIDEOS.update(new_videos)
+        def process_videos():
+            try:
+                process_start = time.time()
+                print(f"Background thread started at {datetime.now()}")
+                processed_data = handler(payload)
+                print(f"Videos processed in background at {time.time() - process_start:.2f} seconds")
+                # Pinecone integration
+                dimensions = handler.sentence_transformer_model.get_sentence_embedding_dimension()
+                PINECONE_API_KEY = get_pinecone_api_key()
+                pc = Pinecone(api_key=PINECONE_API_KEY)
+                existing_indexes = pc.list_indexes()
+                if index_id not in existing_indexes:
+                    print(f"Creating new Pinecone index: {index_id} at {time.time() - process_start:.2f} seconds")
+                    try:
+                        pc.create_index(
+                            name=index_id,
+                            dimension=dimensions,
+                            metric="dotproduct",
+                            spec=ServerlessSpec(cloud="aws",region="us-east-1")
+                        )
+                        print(f"Successfully created Pinecone index: {index_id} at {time.time() - process_start:.2f} seconds")
+                    except Exception as e:
+                        print(f"Failed to create Pinecone index {index_id}: {str(e)} at {time.time() - process_start:.2f} seconds")
+                        if 'ALREADY_EXISTS' in str(e) or '409' in str(e):
+                            print(f"Index {index_id} already exists. Proceeding with existing index at {time.time() - process_start:.2f} seconds")
+                        else:
+                            print("Checking if index already exists with compatible settings...")
+                            if index_id in pc.list_indexes():
+                                index_info = pc.describe_index(index_id)
+                                if index_info.dimension == dimensions and index_info.metric == "dotproduct":
+                                    print(f"Index {index_id} already exists with compatible settings. Proceeding... at {time.time() - process_start:.2f} seconds")
+                                else:
+                                    print(f"WARNING: Index {index_id} exists but with incompatible settings (dimension: {index_info.dimension}, metric: {index_info.metric}). This may cause issues. at {time.time() - process_start:.2f} seconds")
+                            else:
+                                print(f"WARNING: Could not create index {index_id} and it does not exist. Proceeding may fail. at {time.time() - process_start:.2f} seconds")
+                else:
+                    print(f"Index {index_id} already exists. Verifying compatibility... at {time.time() - process_start:.2f} seconds")
+                    index_info = pc.describe_index(index_id)
+                    if index_info.dimension == dimensions and index_info.metric == "dotproduct":
+                        print(f"Index {index_id} is compatible. Proceeding... at {time.time() - process_start:.2f} seconds")
+                    else:
+                        print(f"WARNING: Index {index_id} exists but with incompatible settings (dimension: {index_info.dimension}, metric: {index_info.metric}). This may cause issues. at {time.time() - process_start:.2f} seconds")
+                pinecone_index = pc.Index(index_id)
+                print(f"Uploading data to Pinecone at {time.time() - process_start:.2f} seconds")
+                upload_transcripts_to_vector_db(processed_data["encoded_segments"], pinecone_index, handler.sentence_transformer_model)
+                # Update processed videos
+                PROCESSED_VIDEOS.update(new_videos)
+                print(f"Processed {len(new_videos)} new video(s). Model retrained. Total time: {time.time() - process_start:.2f} seconds")
+            except Exception as e:
+                print(f"Error in background processing: {str(e)}")
+                import traceback
+                print(f"Traceback in background: {traceback.format_exc()}")
+        Thread(target=process_videos).start()
+        print(f"Response returned at {time.time() - start_time:.2f} seconds")
         return jsonify({
-            "message": f"Processed {len(new_videos)} new video(s). Model retrained."
+            "message": f"Processing started for {len(new_videos)} new video(s)."
         })
     except Exception as e:
-        print("Error in /train endpoint:", e)  # Debug print
+        print(f"Error in /train endpoint: {str(e)} at {time.time() - start_time if 'start_time' in locals() else 0:.2f} seconds")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
 
 
@@ -385,7 +376,7 @@ def query_pinecone_model(query, pinecone_index, sentence_transformer_model):
   return pinecone_index.query(vector=encoded_query, top_k=3,
                               include_metadata=True)
 
-@app.route('/query', methods=['GET'])
+@app.route('/api/query', methods=['GET'])
 def query_model(demo_phrase = None, demo_url = None):
     try:
         if demo_phrase and demo_url:
@@ -398,7 +389,7 @@ def query_model(demo_phrase = None, demo_url = None):
             channel_url = request.args.get('channel_url')
             if not channel_url:
                 return jsonify({"error": "Channel url is required"}), 400
-        index_id = "search-" + channel_url
+        index_id = sanitize_index_name(channel_url)
         PINECONE_API_KEY = get_pinecone_api_key()
         pc = Pinecone(
             api_key=PINECONE_API_KEY
@@ -406,12 +397,107 @@ def query_model(demo_phrase = None, demo_url = None):
         pinecone_index = pc.Index(index_id)
         sentence_transformer_model = SentenceTransformer("multi-qa-mpnet-base-dot-v1")
         results = query_pinecone_model(query_phrase, pinecone_index, sentence_transformer_model)
-        return jsonify(results['matches'])
+        app.logger.debug(f"Raw results from Pinecone: {results}")
+        # Clean the results to handle None values
+        cleaned_matches = []
+        matches = results.get('matches', [])
+        app.logger.debug(f"Number of matches: {len(matches)}")
+        for match in matches:
+            if match is None:
+                app.logger.debug("Encountered a None match, skipping.")
+                continue
+            if not isinstance(match, dict):
+                app.logger.debug(f"Match is not a dictionary, type: {type(match)}, attempting to convert.")
+                # Convert ScoredVector to dict if possible
+                try:
+                    match_dict = {
+                        'id': getattr(match, 'id', ''),
+                        'score': getattr(match, 'score', 0.0),
+                        'metadata': getattr(match, 'metadata', {}),
+                        'values': getattr(match, 'values', [])
+                    }
+                    cleaned_match = {}
+                    for key, value in match_dict.items():
+                        if value is None:
+                            cleaned_match[key] = ""
+                        else:
+                            cleaned_match[key] = value
+                    # Round down the timestamp in the URL if it exists in metadata
+                    if 'metadata' in cleaned_match and 'url' in cleaned_match['metadata']:
+                        url = cleaned_match['metadata']['url']
+                        if '&t=' in url:
+                            try:
+                                timestamp_str = url.split('&t=')[1]
+                                timestamp_float = float(timestamp_str)
+                                rounded_timestamp = int(timestamp_float)
+                                cleaned_match['metadata']['url'] = url.split('&t=')[0] + '&t=' + str(rounded_timestamp)
+                            except (ValueError, IndexError):
+                                app.logger.debug(f"Failed to parse or round timestamp in URL: {url}")
+                    cleaned_matches.append(cleaned_match)
+                    app.logger.debug(f"Successfully converted match to dict: {cleaned_match}")
+                except Exception as e:
+                    app.logger.debug(f"Failed to convert match to dict: {str(e)}")
+                    continue
+            else:
+                cleaned_match = {}
+                for key, value in match.items():
+                    if value is None:
+                        cleaned_match[key] = ""
+                    else:
+                        cleaned_match[key] = value
+                # Round down the timestamp in the URL if it exists in metadata
+                if 'metadata' in cleaned_match and 'url' in cleaned_match['metadata']:
+                    url = cleaned_match['metadata']['url']
+                    if '&t=' in url:
+                        try:
+                            timestamp_str = url.split('&t=')[1]
+                            timestamp_float = float(timestamp_str)
+                            rounded_timestamp = int(timestamp_float)
+                            cleaned_match['metadata']['url'] = url.split('&t=')[0] + '&t=' + str(rounded_timestamp)
+                        except (ValueError, IndexError):
+                            app.logger.debug(f"Failed to parse or round timestamp in URL: {url}")
+                cleaned_matches.append(cleaned_match)
+        app.logger.debug(f"Number of cleaned matches: {len(cleaned_matches)}")
+        return jsonify(cleaned_matches)
     except Exception as e:
+        app.logger.error(f"Error in /api/query endpoint: {str(e)}")
+        import traceback
+        app.logger.error(f"Traceback: {traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
 
+def ensure_table_exists():
+    try:
+        # Check if table exists
+        dynamodb.Table('UserTokens').table_status
+        print("UserTokens table exists")
+    except Exception as e:
+        try:
+            print("Creating UserTokens table...")
+            # Create the table
+            table = dynamodb.create_table(
+                TableName='UserTokens',
+                KeySchema=[
+                    {
+                        'AttributeName': 'user_id',
+                        'KeyType': 'HASH'  # Partition key
+                    }
+                ],
+                AttributeDefinitions=[
+                    {
+                        'AttributeName': 'user_id',
+                        'AttributeType': 'S'  # String
+                    }
+                ],
+                BillingMode='PAY_PER_REQUEST'  # On-demand capacity
+            )
+            # Don't wait for the table, just log that we started creation
+            print("UserTokens table creation initiated")
+        except Exception as create_error:
+            print(f"Error creating table: {str(create_error)}")
+            # Continue anyway - we'll handle table not existing in the routes
 
 if __name__ == '__main__':
+    ensure_table_exists()
     app.run(host='0.0.0.0', port=5000, debug=True)
 # if __name__ == '__main__':
 #     app.run(port=8080, debug=True)
