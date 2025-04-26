@@ -5,6 +5,7 @@ function App() {
 
   const [message, setMessage] = React.useState(""); // State to store the API response
   const [queryResults, setQueryResults] = React.useState([]); // State for query results
+  const [videoTrainMessage, setVideoTrainMessage] = React.useState(""); // State to store the single video training response
   const backendUrl = 'https://aivideo.planeteria.com';
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -49,21 +50,58 @@ function App() {
     }
   };
 
+  const handleVideoSubmit = async (event) => {
+    event.preventDefault();
+    const channelUrl = event.target.channelURL.value;
+    const videoUrl = event.target.videoURL.value;
+    try {
+        const e2ApiUrlTrainVideo = 'https://aivideo.planeteria.com/api/train_video';
+        // Call backend API to trigger training on a single video
+        const response = await fetch(e2ApiUrlTrainVideo, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ channel_url: channelUrl, video_url: videoUrl }),
+        });
+        const data = await response.json();
+        setVideoTrainMessage(data.message || "Video training started!");
+    } catch (error) {
+        setVideoTrainMessage("Error occurred during video training. Please try again.");
+    }
+  };
+
   return (
     <div className="App">
-      {/* Training Form */}
-      <form onSubmit={handleSubmit}>
-        <textarea name="channelURL" placeholder="Enter channel URL"></textarea>
-        <button type="submit">Train Model</button>
-      </form>
-      {message && <div className="message">{message}</div>}
+      {/* Section 1: Train on Channel URL */}
+      <div className="section">
+        <h2>Train on Channel URL</h2>
+        <form onSubmit={handleSubmit}>
+          <textarea name="channelURL" placeholder="Enter channel URL"></textarea>
+          <button type="submit">Train Model</button>
+        </form>
+        {message && <div className="message">{message}</div>}
+      </div>
 
-      {/* Query Form */}
-      <form onSubmit={handleQuerySubmit}>
-        <textarea name="queryPhrase" placeholder="Enter query phrase"></textarea>
-        <textarea name="channelURL" placeholder="Enter channel URL"></textarea>
-        <button type="submit">Query Model</button>
-      </form>
+      {/* Section 2: Add Video to Trained Model */}
+      <div className="section">
+        <h2>Add Video to Trained Model</h2>
+        <form onSubmit={handleVideoSubmit}>
+          <textarea name="channelURL" placeholder="Enter channel URL"></textarea>
+          <textarea name="videoURL" placeholder="Enter video URL"></textarea>
+          <button type="submit">Train on Video</button>
+        </form>
+        {videoTrainMessage && <div className="message">{videoTrainMessage}</div>}
+      </div>
+
+      {/* Section 3: Query */}
+      <div className="section">
+        <h2>Query Trained Model</h2>
+        <form onSubmit={handleQuerySubmit}>
+          <textarea name="queryPhrase" placeholder="Enter query phrase"></textarea>
+          <textarea name="channelURL" placeholder="Enter channel URL"></textarea>
+          <button type="submit">Query Model</button>
+        </form>
+      </div>
 
       {/* Display Query Results */}
       <div className="results">

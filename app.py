@@ -506,6 +506,95 @@ def ensure_table_exists():
             print(f"Error creating table: {str(create_error)}")
             # Continue anyway - we'll handle table not existing in the routes
 
+@app.route('/api/train_video', methods=['POST'])
+def train_single_video():
+    try:
+        start_time = time.time()
+        print(f"Starting train_single_video at {datetime.now()}")
+        data = request.get_json()
+        channel_url = data.get('channel_url')
+        video_url = data.get('video_url')
+        
+        if not channel_url or not video_url:
+            return jsonify({"error": "Both channel_url and video_url are required"}), 400
+            
+        print(f"Processing video {video_url} for channel {channel_url} at {time.time() - start_time:.2f} seconds")
+        # Sanitize the channel URL for use as index name
+        index_id = sanitize_index_name(channel_url)
+        print(f"Using Pinecone index name: {index_id} at {time.time() - start_time:.2f} seconds")
+        
+        # Extract video ID from URL if necessary
+        video_id = video_url.split("v=")[-1] if "v=" in video_url else video_url
+        
+        # Check if video is already processed
+        if video_id in PROCESSED_VIDEOS:
+            print(f"Video {video_id} already processed, returning at {time.time() - start_time:.2f} seconds")
+            return jsonify({"message": "Video already processed"}), 200
+            
+        # Process the video asynchronously
+        print(f"Starting processing for video {video_id} at {time.time() - start_time:.2f} seconds")
+        handler = EndpointHandler(path="")
+        payload = {"video_urls": [video_url]}
+        
+        def process_single_video():
+            try:
+                process_start = time.time()
+                print(f"Background thread for single video started at {datetime.now()}")
+                processed_data = handler(payload)
+                print(f"Video processed in background at {time.time() - process_start:.2f} seconds")
+                
+                # Pinecone integration
+                dimensions = handler.sentence_transformer_model.get_sentence_embedding_dimension()
+                PINECONE_API_KEY = get_pinecone_api_key()
+                pc = Pinecone(api_key=PINECONE_API_KEY)
+                existing_indexes = pc.list_indexes()
+                
+                if index_id not in existing_indexes:
+                    print(f"Index {index_id} does not exist. Creating new index at {time.time() - process_start:.2f} seconds")
+                    try:
+                        pc.create_index(
+                            name=index_id,
+                            dimension=dimensions,
+                            metric="dotproduct",
+                            spec=ServerlessSpec(cloud="aws", region="us-east-1")
+                        )
+                        print(f"Successfully created Pinecone index: {index_id} at {time.time() - process_start:.2f} seconds")
+                    except Exception as e:
+                        print(f"Failed to create Pinecone index {index_id}: {str(e)} at {time.time() - process_start:.2f} seconds")
+                        if 'ALREADY_EXISTS' in str(e) or '409' in str(e):
+                            print(f"Index {index_id} already exists. Proceeding with existing index at {time.time() - process_start:.2f} seconds")
+                        else:
+                            print(f"WARNING: Could not create index {index_id}. Proceeding may fail. at {time.time() - process_start:.2f} seconds")
+                else:
+                    print(f"Index {index_id} already exists. Verifying compatibility... at {time.time() - process_start:.2f} seconds")
+                    index_info = pc.describe_index(index_id)
+                    if index_info.dimension == dimensions and index_info.metric == "dotproduct":
+                        print(f"Index {index_id} is compatible. Proceeding... at {time.time() - process_start:.2f} seconds")
+                    else:
+                        print(f"WARNING: Index {index_id} exists but with incompatible settings (dimension: {index_info.dimension}, metric: {index_info.metric}). This may cause issues. at {time.time() - process_start:.2f} seconds")
+                
+                pinecone_index = pc.Index(index_id)
+                print(f"Uploading data to Pinecone at {time.time() - process_start:.2f} seconds")
+                upload_transcripts_to_vector_db(processed_data["encoded_segments"], pinecone_index, handler.sentence_transformer_model)
+                # Update processed videos
+                PROCESSED_VIDEOS.add(video_id)
+                print(f"Processed video {video_id}. Total time: {time.time() - process_start:.2f} seconds")
+            except Exception as e:
+                print(f"Error in background processing of single video: {str(e)}")
+                import traceback
+                print(f"Traceback in background: {traceback.format_exc()}")
+        
+        Thread(target=process_single_video).start()
+        print(f"Response returned at {time.time() - start_time:.2f} seconds")
+        return jsonify({
+            "message": f"Processing started for video {video_id}."
+        })
+    except Exception as e:
+        print(f"Error in /train_video endpoint: {str(e)} at {time.time() - start_time if 'start_time' in locals() else 0:.2f} seconds")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
     ensure_table_exists()
     app.run(host='0.0.0.0', port=5000, debug=True)
