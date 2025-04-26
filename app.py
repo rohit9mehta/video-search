@@ -265,8 +265,12 @@ def sanitize_index_name(url):
     """Convert a URL into a valid Pinecone index name."""
     # Remove common URL parts
     url = url.replace('https://', '').replace('http://', '').replace('www.', '')
-    # Remove everything after the first slash
-    url = url.split('/')[0]
+    # Split into domain and path, keep the path for YouTube URLs
+    parts = url.split('/', 1)
+    if len(parts) > 1 and 'youtube.com' in parts[0]:
+        url = parts[1].replace('/', '-')
+    else:
+        url = parts[0]
     # Replace invalid characters with dash
     url = re.sub(r'[^a-z0-9-]', '-', url.lower())
     # Ensure it starts with a letter (Pinecone requirement)
@@ -372,9 +376,15 @@ def train_model(demo_url = None):
 
 def query_pinecone_model(query, pinecone_index, sentence_transformer_model):
   encoded_query = sentence_transformer_model.encode(query).tolist()
-  # print(encoded_query)
-  return pinecone_index.query(vector=encoded_query, top_k=3,
-                              include_metadata=True)
+  # Query with top_k=10 since we only need a maximum of 10 results after filtering
+  results = pinecone_index.query(vector=encoded_query, top_k=10, include_metadata=True)
+  # Filter matches with score >= 22.5
+  filtered_matches = [match for match in results.get('matches', []) if match.get('score', 0.0) >= 22.5]
+  # Sort by score in descending order
+  filtered_matches.sort(key=lambda x: x.get('score', 0.0), reverse=True)
+  # Return the filtered and sorted results (will be empty if no matches meet the threshold)
+  results['matches'] = filtered_matches
+  return results
 
 @app.route('/api/query', methods=['GET'])
 def query_model(demo_phrase = None, demo_url = None):
