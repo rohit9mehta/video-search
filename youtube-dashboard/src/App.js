@@ -114,10 +114,10 @@ function App() {
                   <span>{result.error}</span>
                 ) : (
                   <>
-                    <b>Match:</b> {result.text} <br />
+                    <b>Match:</b> {result.metadata?.text || result.text || 'Not available'} <br />
                     <b>Video URL:</b>{" "}
-                    <a href={result.metadata.url} target="_blank" rel="noopener noreferrer">
-                      {result.metadata.url}
+                    <a href={result.metadata?.url || 'Not available'} target="_blank" rel="noopener noreferrer">
+                      {result.metadata?.url || 'Not available'}
                     </a>
                   </>
                 )}
