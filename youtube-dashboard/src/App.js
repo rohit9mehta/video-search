@@ -4,6 +4,7 @@ import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-d
 import CustomerView from './components/CustomerView';
 import AdminView from './components/AdminView';
 import Login from './components/Login';
+import LandingPage from './components/LandingPage';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 function AppContent() {
@@ -19,6 +20,7 @@ function AppContent() {
           isAuthenticated ? <AdminView /> : <Navigate to="/login" replace />
         } 
       />
+      <Route path="/landing" element={<LandingPage />} />
     </Routes>
   );
 }

@@ -97,34 +97,40 @@ def fetch_all_videos_yt(channel_url):
     return [video['videoId'] for video in videos]
 # print(fetch_all_videos_yt("https://www.youtube.com/@rohitmehta5258"))
 
-# Get captions for a given YouTube video
-def get_captions(video_id):
+# Get captions for a given video (YouTube or Vimeo)
+def get_captions(video_id, platform='youtube'):
     try:
-        ytt_api = YouTubeTranscriptApi(
-            proxy_config=WebshareProxyConfig(
-                proxy_username="rqdaovtb",
-                proxy_password="oufjkm011cad",
+        if platform == 'youtube':
+            ytt_api = YouTubeTranscriptApi(
+                proxy_config=WebshareProxyConfig(
+                    proxy_username="rqdaovtb",
+                    proxy_password="oufjkm011cad",
+                )
             )
-        )
-        transcript = ytt_api.fetch(video_id, languages=['en'])
-        if transcript:
-            # Convert transcript to SRT-like format for compatibility with existing code
-            srt_content = []
-            for i, snippet in enumerate(transcript.snippets, 1):
-                start = snippet.start
-                end = start + snippet.duration
-                start_str = f"{int(start // 3600):02d}:{int((start % 3600) // 60):02d}:{int(start % 60):02d},{int((start % 1) * 1000):03d}"
-                end_str = f"{int(end // 3600):02d}:{int((end % 3600) // 60):02d}:{int(end % 60):02d},{int((end % 1) * 1000):03d}"
-                srt_content.append(f"{i}")
-                srt_content.append(f"{start_str} --> {end_str}")
-                srt_content.append(snippet.text)
-                srt_content.append("")
-            return "\n".join(srt_content)
-        else:
-            print(f"No transcripts found for video {video_id}, skipping.")
+            transcript = ytt_api.fetch(video_id, languages=['en'])
+            if transcript:
+                # Convert transcript to SRT-like format for compatibility with existing code
+                srt_content = []
+                for i, snippet in enumerate(transcript.snippets, 1):
+                    start = snippet.start
+                    end = start + snippet.duration
+                    start_str = f"{int(start // 3600):02d}:{int((start % 3600) // 60):02d}:{int(start % 60):02d},{int((start % 1) * 1000):03d}"
+                    end_str = f"{int(end // 3600):02d}:{int((end % 3600) // 60):02d}:{int(end % 60):02d},{int((end % 1) * 1000):03d}"
+                    srt_content.append(f"{i}")
+                    srt_content.append(f"{start_str} --> {end_str}")
+                    srt_content.append(snippet.text)
+                    srt_content.append("")
+                return "\n".join(srt_content)
+            else:
+                print(f"No transcripts found for YouTube video {video_id}, skipping.")
+                return None
+        elif platform == 'vimeo':
+            # Placeholder for Vimeo caption fetching
+            # This would require Vimeo's API or a similar service to fetch captions
+            print(f"Fetching captions for Vimeo video {video_id} is not implemented yet.")
             return None
     except Exception as e:
-        print(f"Error fetching captions for video {video_id}: {e}")
+        print(f"Error fetching captions for {platform} video {video_id}: {e}")
         return None
 
 class EndpointHandler():
@@ -139,8 +145,15 @@ class EndpointHandler():
         encoded_segments = []
 
         for video_url in video_urls:
-            video_id = video_url.split("v=")[-1] if "v=" in video_url else video_url
-            captions = get_captions(video_id)
+            if 'youtube.com' in video_url:
+                video_id = video_url.split("v=")[-1] if "v=" in video_url else video_url
+                captions = get_captions(video_id, platform='youtube')
+            elif 'vimeo.com' in video_url:
+                video_id = video_url.split('/')[-1] if '/' in video_url else video_url
+                captions = get_captions(video_id, platform='vimeo')
+            else:
+                print(f"Unsupported video URL: {video_url}")
+                continue
 
             if captions:
                 print(f"Processing captions for {video_id}")
