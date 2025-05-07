@@ -40,11 +40,30 @@ function LandingPage() {
     }
   }, [currentLineIdx, loading]);
 
-  const handleChatSubmit = (e) => {
+  const handleChatSubmit = async (e) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
-    setChatHistory([...chatHistory, { sender: 'user', text: chatInput }, { sender: 'bot', text: 'This is a mock response for: ' + chatInput }]);
+    const userMsg = { sender: 'user', text: chatInput };
+    setChatHistory(prev => [...prev, userMsg, { sender: 'bot', text: 'Thinking...' }]);
     setChatInput('');
+
+    try {
+      const res = await fetch('/api/llm_chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: chatInput, video_id: VIDEO_ID })
+      });
+      const data = await res.json();
+      setChatHistory(prev => [
+        ...prev.slice(0, -1), // remove 'Thinking...'
+        { sender: 'bot', text: data.answer || data.error || "Sorry, I couldn't find an answer." }
+      ]);
+    } catch (err) {
+      setChatHistory(prev => [
+        ...prev.slice(0, -1),
+        { sender: 'bot', text: "Error contacting server." }
+      ]);
+    }
   };
 
   const handleSeek = (time) => {

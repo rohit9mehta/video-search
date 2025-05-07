@@ -28,6 +28,8 @@ import re
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.proxies import WebshareProxyConfig
 from threading import Thread
+from dotenv import load_dotenv
+import openai
 
 app = Flask(__name__)
 app.logger.addHandler(logging.StreamHandler(sys.stdout))
@@ -55,6 +57,8 @@ tokens_table = dynamodb.Table('UserTokens')
 S3_BUCKET_NAME = "video-search-training-bucket"
 S3_REGION = "us-east-2"
 
+load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 @app.route('/')
 def home():
@@ -606,6 +610,49 @@ def train_single_video():
         print(f"Error in /train_video endpoint: {str(e)} at {time.time() - start_time if 'start_time' in locals() else 0:.2f} seconds")
         import traceback
         print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/llm_chat', methods=['POST'])
+def llm_chat():
+    try:
+        data = request.get_json()
+        question = data.get('question')
+        video_id = data.get('video_id')
+        if not question or not video_id:
+            return jsonify({"error": "Missing question or video_id"}), 400
+
+        # Download transcript from S3
+        s3_key = f"transcripts/{video_id}.json"
+        transcript_obj = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=s3_key)
+        transcript_data = json.loads(transcript_obj['Body'].read().decode('utf-8'))
+
+        # Compose context (truncate if too long for LLM)
+        transcript_text = " ".join([line['text'] for line in transcript_data])
+        max_context = 3000  # chars, adjust as needed
+        if len(transcript_text) > max_context:
+            transcript_text = transcript_text[:max_context] + "..."
+
+        prompt = (
+            f"You are an expert video assistant. "
+            f"Given the following transcript, answer the user's question as helpfully as possible.\n\n"
+            f"Transcript:\n{transcript_text}\n\n"
+            f"Question: {question}\n\n"
+            f"Answer:"
+        )
+
+        # Call OpenAI API
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=256,
+            temperature=0.2,
+        )
+        answer = response['choices'][0]['message']['content'].strip()
+        return jsonify({"answer": answer})
+
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
