@@ -249,34 +249,53 @@ class EndpointHandler():
 # payload = {"video_urls": ["https://www.youtube.com/watch?v=w4CMaKF_IXI", "https://www.youtube.com/watch?v=PQtMTPhmQwM"], "trying_live": True} # I Tried Every Fast Food Chicken Tender In America
 
 def upload_transcripts_to_vector_db(transcripts_for_upload, pinecone_index, sentence_transformer_model, batch_size=64):
-  # loop through in batches of batch_size to encode and insert
-  for i in tqdm(range(0, len(transcripts_for_upload), batch_size)):
-      # find end position of batch (for when we hit end of data)
-      i_end = min(len(transcripts_for_upload)-1, i+batch_size)
-      # extract the metadata like text, start/end positions, etc
-      batch_meta = [{
-          'id': transcripts_for_upload[x]['id'],
-          'video_id': transcripts_for_upload[x]['video_id'],
-          'start': transcripts_for_upload[x]['start'],
-          'text': transcripts_for_upload[x]['text'],
-          'url': transcripts_for_upload[x]['url']
-      } for x in range(i, i_end)]
-      # extract only text to be encoded by embedding model
-      batch_text = [
-          row['text'] for row in transcripts_for_upload[i:i_end]
-      ]
-      # create the embedding vectors
-      batch_embeds = sentence_transformer_model.encode(batch_text).tolist()
-      # extract IDs to be attached to each embedding and metadata
-      batch_ids = [
-          row['id'] for row in transcripts_for_upload[i:i_end]
-      ]
-      # 'upsert' (insert) IDs, embeddings, and metadata to index
-      to_upsert = list(zip(
-          batch_ids, batch_embeds, batch_meta
-      ))
-      pinecone_index.upsert(to_upsert)
+    # Collect enriched segments by video_id for S3 upload
+    segments_by_video = {}
+    for segment in transcripts_for_upload:
+        video_id = segment.get('video_id')
+        if not video_id:
+            continue
+        if video_id not in segments_by_video:
+            segments_by_video[video_id] = []
+        segments_by_video[video_id].append(segment)
+
+    # Loop through in batches of batch_size to encode and insert into Pinecone
+    for i in tqdm(range(0, len(transcripts_for_upload), batch_size)):
+        i_end = min(len(transcripts_for_upload), i + batch_size)
+        batch_meta = [{
+            'id': transcripts_for_upload[x]['id'],
+            'video_id': transcripts_for_upload[x]['video_id'],
+            'start': transcripts_for_upload[x]['start'],
+            'text': transcripts_for_upload[x]['text'],
+            'url': transcripts_for_upload[x]['url']
+        } for x in range(i, i_end)]
+        batch_text = [row['text'] for row in transcripts_for_upload[i:i_end]]
+        batch_embeds = sentence_transformer_model.encode(batch_text).tolist()
+        batch_ids = [row['id'] for row in transcripts_for_upload[i:i_end]]
+        # Add embeddings to batch_meta for S3
+        for idx, meta in enumerate(batch_meta):
+            meta['embedding'] = batch_embeds[idx]
+        to_upsert = list(zip(batch_ids, batch_embeds, batch_meta))
+        pinecone_index.upsert(to_upsert)
     #   print(f'Uploaded Batches: {i} to {i_end}')
+
+    # Save enriched segments to S3 (one file per video_id)
+    for video_id, segments in segments_by_video.items():
+        # Add embeddings to all segments (if not already present)
+        for segment in segments:
+            if 'embedding' not in segment and 'vectors' in segment:
+                segment['embedding'] = segment['vectors']
+        s3_key = f"transcripts/{video_id}.json"
+        try:
+            s3_client.put_object(
+                Bucket=S3_BUCKET_NAME,
+                Key=s3_key,
+                Body=json.dumps(segments),
+                ContentType='application/json'
+            )
+            print(f"Uploaded enriched transcript to s3://{S3_BUCKET_NAME}/{s3_key}")
+        except Exception as e:
+            print(f"Error uploading enriched transcript to S3 for {video_id}: {e}")
 
 def sanitize_index_name(url):
     """Convert a URL into a valid Pinecone index name."""
@@ -621,10 +640,29 @@ def llm_chat():
         if not question or not video_id:
             return jsonify({"error": "Missing question or video_id"}), 400
 
-        # Download transcript from S3
+        # Download enriched transcript from S3
         s3_key = f"transcripts/{video_id}.json"
         transcript_obj = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=s3_key)
         transcript_data = json.loads(transcript_obj['Body'].read().decode('utf-8'))
+
+        # Use precomputed embeddings for each segment
+        model_name = "multi-qa-mpnet-base-dot-v1"
+        sentence_transformer_model = SentenceTransformer(model_name)
+        question_embedding = sentence_transformer_model.encode([question])[0]
+
+        # Compute similarity for each segment using precomputed embedding
+        best_score = float('-inf')
+        best_segment = None
+        for segment in transcript_data:
+            segment_text = segment.get('text', '')
+            segment_embedding = segment.get('embedding') or segment.get('vectors')
+            if not segment_text or not segment_embedding:
+                continue
+            # Use dot product (since Pinecone index uses dotproduct)
+            score = sum(q * s for q, s in zip(question_embedding, segment_embedding))
+            if score > best_score:
+                best_score = score
+                best_segment = segment
 
         # Compose context (truncate if too long for LLM)
         transcript_text = " ".join([line['text'] for line in transcript_data])
@@ -640,15 +678,24 @@ def llm_chat():
             f"Answer:"
         )
 
-        # Call OpenAI API
-        response = openai.ChatCompletion.create(
+        # Use new OpenAI API (openai>=1.0.0)
+        client = openai.OpenAI()
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=256,
             temperature=0.2,
         )
-        answer = response['choices'][0]['message']['content'].strip()
-        return jsonify({"answer": answer})
+        answer = response.choices[0].message.content.strip()
+
+        # Add the relevant video link if found
+        if best_segment and 'url' in best_segment:
+            video_link = best_segment['url']
+            formatted_answer = f"Answer: {answer} See this part of the video: {video_link}"
+        else:
+            formatted_answer = f"Answer: {answer} (Could not find a specific part of the video)"
+
+        return jsonify({"answer": formatted_answer})
 
     except Exception as e:
         import traceback
