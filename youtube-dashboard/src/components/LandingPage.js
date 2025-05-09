@@ -28,7 +28,7 @@ function LandingPage() {
 
   // Find the current transcript line index
   const currentLineIdx = transcript.reduce((acc, line, idx) => {
-    if (currentTime >= line.time) return idx;
+    if (currentTime >= line.start) return idx;
     return acc;
   }, 0);
 
@@ -99,7 +99,7 @@ function LandingPage() {
                 <li
                   key={idx}
                   ref={el => transcriptRefs.current[idx] = el}
-                  onClick={() => handleSeek(line.time)}
+                  onClick={() => handleSeek(line.start)}
                   style={{
                     marginBottom: 12,
                     cursor: 'pointer',
@@ -112,7 +112,7 @@ function LandingPage() {
                   }}
                 >
                   <span style={{ color: '#888', fontSize: '0.95em', marginRight: 8 }}>
-                    {new Date(line.time * 1000).toISOString().substr(14, 5)}
+                    {new Date(line.start * 1000).toISOString().substr(14, 5)}
                   </span>
                   <span>{line.text}</span>
                 </li>

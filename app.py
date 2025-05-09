@@ -681,19 +681,20 @@ def llm_chat():
         # Use new OpenAI API (openai>=1.0.0)
         client = openai.OpenAI()
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=256,
             temperature=0.2,
         )
         answer = response.choices[0].message.content.strip()
 
-        # Add the relevant video link if found
-        if best_segment and 'url' in best_segment:
+        # Only provide the video link if the best score exceeds the threshold
+        THRESHOLD = 20  # Adjust as needed
+        if best_segment and 'url' in best_segment and best_score > THRESHOLD:
             video_link = best_segment['url']
-            formatted_answer = f"Answer: {answer} See this part of the video: {video_link}"
+            formatted_answer = f"{answer} See this part of the video: {video_link}"
         else:
-            formatted_answer = f"Answer: {answer} (Could not find a specific part of the video)"
+            formatted_answer = f"{answer} (No specific part of the video found with high confidence)"
 
         return jsonify({"answer": formatted_answer})
 
