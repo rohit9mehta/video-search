@@ -56,7 +56,11 @@ function LandingPage() {
       const data = await res.json();
       setChatHistory(prev => [
         ...prev.slice(0, -1), // remove 'Thinking...'
-        { sender: 'bot', text: data.answer || data.error || "Sorry, I couldn't find an answer." }
+        {
+          sender: 'bot',
+          text: data.answer || data.error || "Sorry, I couldn't find an answer.",
+          timestamp: data.timestamp // may be undefined or null
+        }
       ]);
     } catch (err) {
       setChatHistory(prev => [
@@ -123,7 +127,7 @@ function LandingPage() {
       </div>
       {/* Chatbot Search */}
       <div style={{ marginTop: 40, background: '#fff', borderRadius: 10, boxShadow: '0 2px 8px rgba(0,0,0,0.07)', padding: 24, maxWidth: 600, marginLeft: 'auto', marginRight: 'auto' }}>
-        <h3 style={{ color: '#333', marginTop: 0 }}>Chatbot Search</h3>
+        <h3 style={{ color: '#333', marginTop: 0 }}>Video Assistant</h3>
         <div style={{ maxHeight: 180, overflowY: 'auto', marginBottom: 16, background: '#f5f5f5', borderRadius: 8, padding: 12 }}>
           {chatHistory.map((msg, idx) => (
             <div key={idx} style={{ marginBottom: 10, textAlign: msg.sender === 'user' ? 'right' : 'left' }}>
@@ -135,7 +139,17 @@ function LandingPage() {
                 padding: '8px 16px',
                 maxWidth: '80%',
                 wordBreak: 'break-word',
-              }}>{msg.text}</span>
+              }}>
+                {msg.text}
+                {msg.timestamp !== undefined && msg.timestamp !== null && (
+                  <button 
+                    style={{ marginLeft: 8, padding: '4px 10px', borderRadius: 8, border: 'none', background: '#007399', color: '#fff', cursor: 'pointer' }}
+                    onClick={() => handleSeek(msg.timestamp)}
+                  >
+                    Jump to this part
+                  </button>
+                )}
+              </span>
             </div>
           ))}
         </div>

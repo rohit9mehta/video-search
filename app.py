@@ -690,13 +690,14 @@ def llm_chat():
 
         # Only provide the video link if the best score exceeds the threshold
         THRESHOLD = 20  # Adjust as needed
-        if best_segment and 'url' in best_segment and best_score > THRESHOLD:
-            video_link = best_segment['url']
-            formatted_answer = f"{answer} See this part of the video: {video_link}"
-        else:
-            formatted_answer = f"{answer} (No specific part of the video found with high confidence)"
+        timestamp = None
+        if best_segment and best_score > THRESHOLD:
+            timestamp = int(best_segment.get('start', 0))
 
-        return jsonify({"answer": formatted_answer})
+        return jsonify({
+            "answer": answer,
+            "timestamp": timestamp
+        })
 
     except Exception as e:
         import traceback
