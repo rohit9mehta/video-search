@@ -704,6 +704,19 @@ def llm_chat():
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/summary', methods=['GET'])
+def get_video_summary():
+    video_id = request.args.get('video_id')
+    if not video_id:
+        return jsonify({"error": "Missing video_id"}), 400
+    s3_key = f"summaries/{video_id}.json"
+    try:
+        obj = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=s3_key)
+        summary_data = json.loads(obj['Body'].read().decode('utf-8'))
+        return jsonify(summary_data)
+    except Exception as e:
+        return jsonify({"error": f"Summary not found for video {video_id}: {str(e)}"}), 404
+
 if __name__ == '__main__':
     ensure_table_exists()
     app.run(host='0.0.0.0', port=5000, debug=True)
