@@ -391,6 +391,9 @@ def train_model(demo_url = None):
                 pinecone_index = pc.Index(index_id)
                 print(f"Uploading data to Pinecone at {time.time() - process_start:.2f} seconds")
                 upload_transcripts_to_vector_db(processed_data["encoded_segments"], pinecone_index, handler.sentence_transformer_model)
+                # Generate and upload summary for each video
+                for video_id in new_videos:
+                    generate_and_upload_summary(video_id)
                 # Update processed videos
                 PROCESSED_VIDEOS.update(new_videos)
                 print(f"Processed {len(new_videos)} new video(s). Model retrained. Total time: {time.time() - process_start:.2f} seconds")
@@ -612,6 +615,7 @@ def train_single_video():
                 pinecone_index = pc.Index(index_id)
                 print(f"Uploading data to Pinecone at {time.time() - process_start:.2f} seconds")
                 upload_transcripts_to_vector_db(processed_data["encoded_segments"], pinecone_index, handler.sentence_transformer_model)
+                generate_and_upload_summary(video_id)
                 # Update processed videos
                 PROCESSED_VIDEOS.add(video_id)
                 print(f"Processed video {video_id}. Total time: {time.time() - process_start:.2f} seconds")
@@ -716,6 +720,39 @@ def get_video_summary():
         return jsonify(summary_data)
     except Exception as e:
         return jsonify({"error": f"Summary not found for video {video_id}: {str(e)}"}), 404
+
+def generate_and_upload_summary(video_id):
+    try:
+        s3_key = f"transcripts/{video_id}.json"
+        obj = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=s3_key)
+        transcript = json.loads(obj["Body"].read().decode("utf-8"))
+        transcript_text = " ".join([seg["text"] for seg in transcript])
+        max_context = 3000
+        if len(transcript_text) > max_context:
+            transcript_text = transcript_text[:max_context] + "..."
+        prompt = (
+            "Summarize the following YouTube video transcript in a concise paragraph for a general audience:\n\n"
+            f"{transcript_text}\n\nSummary:"
+        )
+        client = openai.OpenAI()
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=256,
+            temperature=0.2,
+        )
+        summary = response.choices[0].message.content.strip()
+        summary_obj = {"video_id": video_id, "summary": summary}
+        summary_key = f"summaries/{video_id}.json"
+        s3_client.put_object(
+            Bucket=S3_BUCKET_NAME,
+            Key=summary_key,
+            Body=json.dumps(summary_obj),
+            ContentType="application/json"
+        )
+        print(f"Summary uploaded to s3://{S3_BUCKET_NAME}/{summary_key}")
+    except Exception as e:
+        print(f"Error generating/uploading summary for {video_id}: {e}")
 
 if __name__ == '__main__':
     ensure_table_exists()

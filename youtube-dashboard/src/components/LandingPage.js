@@ -1,12 +1,13 @@
 import React, { useRef, useState, useEffect } from 'react';
 import ReactPlayer from 'react-player';
-
-const VIDEO_ID = 'Gp-_S5z86NY';
-const S3_TRANSCRIPT_URL = `https://video-search-training-bucket.s3.us-east-2.amazonaws.com/transcripts/${VIDEO_ID}.json`;
-const YT_URL = `https://www.youtube.com/watch?v=${VIDEO_ID}`;
-const S3_SUMMARY_URL = `https://video-search-training-bucket.s3.us-east-2.amazonaws.com/summaries/${VIDEO_ID}.json`;
+import { useParams } from 'react-router-dom';
 
 function LandingPage() {
+  const { videoId } = useParams();
+  const VIDEO_ID = videoId;
+  const S3_TRANSCRIPT_URL = `https://video-search-training-bucket.s3.us-east-2.amazonaws.com/transcripts/${VIDEO_ID}.json`;
+  const YT_URL = `https://www.youtube.com/watch?v=${VIDEO_ID}`;
+  const S3_SUMMARY_URL = `https://video-search-training-bucket.s3.us-east-2.amazonaws.com/summaries/${VIDEO_ID}.json`;
   const [transcript, setTranscript] = useState([]);
   const [loading, setLoading] = useState(true);
   const [chatInput, setChatInput] = useState('');
@@ -151,7 +152,9 @@ function LandingPage() {
           />
           <div style={{ background: '#f9f9f9', color: '#222', padding: '18px 24px', borderBottom: '1px solid #eee', fontSize: '1.1em' }}>
             <h3 style={{ margin: '0 0 8px 0', color: '#008CBA' }}>Video Summary</h3>
-            {summary ? summary : <span style={{ color: '#888' }}>Loading summary...</span>}
+            {summary === null
+              ? <span style={{ color: '#888' }}>Summary not available or still processing.</span>
+              : summary}
           </div>
         </div>
         {/* Tabbed Panel: Transcript / Chatbot */}
@@ -192,7 +195,7 @@ function LandingPage() {
                 transition: 'background 0.2s, color 0.2s',
               }}
             >
-              Chatbot
+              Video Chat
             </button>
           </div>
           {/* Tab Content */}
@@ -202,6 +205,8 @@ function LandingPage() {
                 <h3 style={{ marginTop: 0, color: '#555' }}>Transcript</h3>
                 {loading ? (
                   <div>Loading transcript...</div>
+                ) : transcript.length === 0 ? (
+                  <div style={{ color: '#888' }}>Transcript not available or still processing.</div>
                 ) : (
                   <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                     {transcript.map((line, idx) => (
@@ -387,7 +392,7 @@ function LandingPage() {
                     type="text"
                     value={chatInput}
                     onChange={e => setChatInput(e.target.value)}
-                    placeholder="Ask about the video..."
+                    placeholder="Ask anything else about the video..."
                     style={{ flex: 1, padding: 8, borderRadius: 6, border: '1px solid #ccc', fontSize: '1em', background: '#fafcff' }}
                   />
                   <button type="submit" style={{ padding: '8px 18px', background: '#008CBA', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 500, fontSize: '1em' }}>Send</button>

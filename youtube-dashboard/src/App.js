@@ -20,7 +20,7 @@ function AppContent() {
           isAuthenticated ? <AdminView /> : <Navigate to="/login" replace />
         } 
       />
-      <Route path="/landing" element={<LandingPage />} />
+      <Route path="/:videoId" element={<LandingPage />} />
     </Routes>
   );
 }
