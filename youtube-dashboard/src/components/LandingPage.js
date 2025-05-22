@@ -1,9 +1,10 @@
 import React, { useRef, useState, useEffect } from 'react';
 import ReactPlayer from 'react-player';
-import { useParams } from 'react-router-dom';
+import { useParams, useLocation } from 'react-router-dom';
 
 function LandingPage() {
   const { videoId } = useParams();
+  const location = useLocation();
   const VIDEO_ID = videoId;
   const S3_TRANSCRIPT_URL = `https://video-search-training-bucket.s3.us-east-2.amazonaws.com/transcripts/${VIDEO_ID}.json`;
   const YT_URL = `https://www.youtube.com/watch?v=${VIDEO_ID}`;
@@ -20,6 +21,9 @@ function LandingPage() {
   // Add summary state
   const [summary, setSummary] = useState(null);
   const [videoTitle, setVideoTitle] = useState('');
+
+  // Add shouldAutoPlay state
+  const [shouldAutoPlay, setShouldAutoPlay] = useState(false);
 
   // Fetch video title from YouTube oEmbed
   useEffect(() => {
@@ -65,6 +69,27 @@ function LandingPage() {
       node.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }, [currentLineIdx, loading]);
+
+  // Parse t= from query string
+  function getTimestampFromQuery() {
+    const params = new URLSearchParams(location.search);
+    const t = params.get('t');
+    if (t && !isNaN(Number(t))) {
+      return Number(t);
+    }
+    return null;
+  }
+  // Seek to timestamp on mount if t param is present
+  useEffect(() => {
+    const t = getTimestampFromQuery();
+    if (t !== null && playerRef.current) {
+      setShouldAutoPlay(true);
+      setTimeout(() => {
+        playerRef.current.seekTo(t, 'seconds');
+      }, 500);
+    }
+    // eslint-disable-next-line
+  }, []);
 
   const handleChatSubmit = async (e) => {
     e.preventDefault();
@@ -147,6 +172,8 @@ function LandingPage() {
             width="100%"
             height="100%"
             controls
+            playing={shouldAutoPlay}
+            onPlay={() => setShouldAutoPlay(false)}
             style={{ borderRadius: 0, boxShadow: 'none', background: '#000' }}
             onProgress={({ playedSeconds }) => setCurrentTime(playedSeconds)}
           />

@@ -71,13 +71,34 @@ function CustomerView() {
                         <b style={{ color: '#333' }}>Match:</b> <span style={{ color: '#555' }}>{result.metadata?.text || result.text || 'Not available'}</span>
                       </div>
                       <div style={{ fontSize: '0.95em' }}>
-                        <b style={{ color: '#333' }}>Video URL:</b>{" "}
-                        <a href={result.metadata?.url || 'Not available'} target="_blank" rel="noopener noreferrer" style={{ color: '#008CBA', textDecoration: 'none', transition: 'color 0.2s' }}
-                          onMouseOver={(e) => e.target.style.color = '#005f73'}
-                          onMouseOut={(e) => e.target.style.color = '#008CBA'}
-                        >
-                          {result.metadata?.url || 'Not available'}
-                        </a>
+                        <b style={{ color: '#333' }}>Video URL:</b>{' '}
+                        {(() => {
+                          const ytUrl = result.metadata?.url || '';
+                          let landingUrl = 'Not available';
+                          if (ytUrl && ytUrl.includes('youtube.com/watch')) {
+                            const match = ytUrl.match(/[?&]v=([^&]+).*?[&]t=(\d+)/);
+                            if (match) {
+                              const videoId = match[1];
+                              const t = match[2];
+                              landingUrl = `https://aivideo.planeteria.com/${videoId}?t=${t}`;
+                            } else {
+                              // fallback: try to extract videoId only
+                              const idMatch = ytUrl.match(/[?&]v=([^&]+)/);
+                              if (idMatch) {
+                                const videoId = idMatch[1];
+                                landingUrl = `https://aivideo.planeteria.com/${videoId}`;
+                              }
+                            }
+                          }
+                          return (
+                            <a href={landingUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#008CBA', textDecoration: 'none', transition: 'color 0.2s' }}
+                              onMouseOver={e => e.target.style.color = '#005f73'}
+                              onMouseOut={e => e.target.style.color = '#008CBA'}
+                            >
+                              {landingUrl}
+                            </a>
+                          );
+                        })()}
                       </div>
                       {result.metadata?.score && <div style={{ fontSize: '0.9em', color: '#777', marginTop: '5px' }}><b>Score:</b> {result.metadata.score.toFixed(2)}</div>}
                     </>
