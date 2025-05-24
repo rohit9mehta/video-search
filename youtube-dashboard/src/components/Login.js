@@ -19,18 +19,18 @@ function Login() {
   };
 
   return (
-    <div className="App" style={{ fontFamily: 'Arial, sans-serif', maxWidth: '500px', margin: '0 auto', padding: '20px', marginTop: '100px' }}>
-      <h1 style={{ textAlign: 'center', fontSize: '2.5em', marginBottom: '40px', color: '#333' }}>Admin Login</h1>
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', backgroundColor: '#f9f9f9', padding: '30px', borderRadius: '10px', boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)' }}>
+    <div className="App" style={{ fontFamily: 'Arial, sans-serif', maxWidth: '500px', margin: '0 auto', padding: '20px', marginTop: '100px', background: '#f9fbfd', color: '#232946' }}>
+      <h1 style={{ textAlign: 'center', fontSize: '2.5em', marginBottom: '40px', color: '#1976d2', fontWeight: 700, letterSpacing: '-0.5px', background: '#f6faff', borderRadius: 12, boxShadow: '0 2px 8px rgba(25, 118, 210, 0.07)' }}>Admin Login</h1>
+      <form onSubmit={handleSubmit} className="clipt-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', backgroundColor: '#f6faff', padding: '30px', borderRadius: '12px', boxShadow: '0 8px 32px 0 rgba(25, 118, 210, 0.10)' }}>
         <div className="section" style={{ width: '100%', maxWidth: '400px' }}>
-          <h2 style={{ textAlign: 'center', fontSize: '1.8em', marginBottom: '20px', color: '#555' }}>Enter Credentials</h2>
+          <h2 style={{ textAlign: 'center', fontSize: '1.8em', marginBottom: '20px', color: '#232946' }}>Enter Credentials</h2>
           <textarea 
             name="channelURL" 
             placeholder="Enter channel URL"
             value={channelUrl}
             onChange={(e) => setChannelUrl(e.target.value)}
             required
-            style={{ width: '100%', padding: '10px', fontSize: '1em', borderRadius: '5px', border: '1px solid #ddd', marginBottom: '15px', minHeight: '50px', resize: 'vertical', fontFamily: 'Arial, sans-serif' }}
+            style={{ width: '100%', padding: '10px', fontSize: '1em', borderRadius: '8px', border: '1px solid #e3eaf3', marginBottom: '15px', minHeight: '50px', resize: 'vertical', fontFamily: 'Arial, sans-serif', background: '#f9fbfd', color: '#232946' }}
           ></textarea>
           <input
             type="password"
@@ -39,13 +39,11 @@ function Login() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            style={{ width: '100%', padding: '10px', fontSize: '1em', borderRadius: '5px', border: '1px solid #ddd', marginBottom: '15px', fontFamily: 'Arial, sans-serif' }}
+            style={{ width: '100%', padding: '10px', fontSize: '1em', borderRadius: '8px', border: '1px solid #e3eaf3', marginBottom: '15px', fontFamily: 'Arial, sans-serif', background: '#f9fbfd', color: '#232946' }}
           />
           <button 
             type="submit"
-            style={{ padding: '12px 30px', fontSize: '1.1em', backgroundColor: '#008CBA', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', transition: 'background-color 0.3s', width: '100%' }}
-            onMouseOver={(e) => e.target.style.backgroundColor = '#007399'}
-            onMouseOut={(e) => e.target.style.backgroundColor = '#008CBA'}
+            style={{ padding: '12px 30px', fontSize: '1.1em', backgroundColor: '#1976d2', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 500, boxShadow: '0 2px 8px rgba(25, 118, 210, 0.07)', width: '100%' }}
           >
             Login
           </button>

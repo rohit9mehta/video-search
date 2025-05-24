@@ -127,22 +127,28 @@ function LandingPage() {
     }
   };
 
+  // Reset chat handler
+  const handleResetChat = () => {
+    setChatHistory([]);
+    setChatInput('');
+  };
+
   return (
-    <div style={{ fontFamily: 'Arial, sans-serif', width: '100vw', height: '100vh', minHeight: 0, minWidth: 0, padding: 0, margin: 0, boxSizing: 'border-box', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ fontFamily: 'Arial, sans-serif', width: '100vw', height: '100vh', minHeight: 0, minWidth: 0, padding: 0, margin: 0, boxSizing: 'border-box', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: '#f9fbfd', color: '#232946' }}>
       {/* Video Title Heading */}
       <h1
         style={{
           textAlign: 'left',
           margin: '24px 0 8px 32px',
           fontSize: '2em',
-          color: '#008CBA',
+          color: '#1976d2',
           fontWeight: 700,
           letterSpacing: '-0.5px',
-          borderBottom: '1px solid #eee',
+          borderBottom: '1px solid #e3eaf3',
           paddingBottom: 8,
-          background: '#f9f9f9',
-          borderRadius: 0,
-          boxShadow: 'none',
+          background: '#f6faff',
+          borderRadius: 12,
+          boxShadow: '0 2px 8px rgba(25, 118, 210, 0.07)',
           width: 'calc(100% - 32px)',
           maxWidth: 1200,
           flex: '0 0 auto',
@@ -165,7 +171,7 @@ function LandingPage() {
         }}
       >
         {/* Video Player */}
-        <div style={{ flex: '2 1 0%', minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', background: '#000' }}>
+        <div style={{ flex: '2 1 0%', minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', background: '#232946', borderRadius: 12, boxShadow: '0 8px 32px 0 rgba(25, 118, 210, 0.10)' }}>
           <ReactPlayer
             ref={playerRef}
             url={`https://www.youtube.com/watch?v=${VIDEO_ID}`}
@@ -174,29 +180,29 @@ function LandingPage() {
             controls
             playing={shouldAutoPlay}
             onPlay={() => setShouldAutoPlay(false)}
-            style={{ borderRadius: 0, boxShadow: 'none', background: '#000' }}
+            style={{ borderRadius: 0, boxShadow: 'none', background: '#232946' }}
             onProgress={({ playedSeconds }) => setCurrentTime(playedSeconds)}
           />
-          <div style={{ background: '#f9f9f9', color: '#222', padding: '18px 24px', borderBottom: '1px solid #eee', fontSize: '1.1em' }}>
-            <h3 style={{ margin: '0 0 8px 0', color: '#008CBA' }}>Video Summary</h3>
+          <div style={{ background: '#f6faff', color: '#232946', padding: '18px 24px', borderBottom: '1px solid #e3eaf3', fontSize: '1.1em', borderRadius: '0 0 12px 12px' }}>
+            <h3 style={{ margin: '0 0 8px 0', color: '#1976d2' }}>Video Summary</h3>
             {summary === null
               ? <span style={{ color: '#888' }}>Summary not available or still processing.</span>
               : summary}
           </div>
         </div>
         {/* Tabbed Panel: Transcript / Chatbot */}
-        <div style={{ flex: '1 1 0%', minWidth: 0, height: '100%', background: '#fff', borderRadius: 0, boxShadow: 'none', padding: 0, marginLeft: 0, display: 'flex', flexDirection: 'column', minWidth: 340, maxWidth: 600 }}>
+        <div style={{ flex: '1 1 0%', minWidth: 0, height: '100%', background: '#f6faff', borderRadius: 12, boxShadow: '0 8px 32px 0 rgba(25, 118, 210, 0.10)', padding: 0, marginLeft: 0, display: 'flex', flexDirection: 'column', minWidth: 340, maxWidth: 600 }}>
           {/* Tabs */}
-          <div style={{ display: 'flex', borderBottom: '1px solid #eee', borderRadius: '0', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', borderBottom: '1px solid #e3eaf3', borderRadius: '0', overflow: 'hidden', background: '#f6faff' }}>
             <button
               onClick={() => setActiveTab('transcript')}
               style={{
                 flex: 1,
                 padding: '16px 0',
-                background: activeTab === 'transcript' ? '#f9f9f9' : '#fff',
+                background: activeTab === 'transcript' ? '#f9fbfd' : '#f6faff',
                 border: 'none',
-                borderBottom: activeTab === 'transcript' ? '2px solid #008CBA' : '2px solid transparent',
-                color: activeTab === 'transcript' ? '#008CBA' : '#333',
+                borderBottom: activeTab === 'transcript' ? '2px solid #1976d2' : '2px solid transparent',
+                color: activeTab === 'transcript' ? '#1976d2' : '#232946',
                 fontWeight: activeTab === 'transcript' ? 'bold' : 'normal',
                 fontSize: '1.1em',
                 cursor: 'pointer',
@@ -211,10 +217,10 @@ function LandingPage() {
               style={{
                 flex: 1,
                 padding: '16px 0',
-                background: activeTab === 'chatbot' ? '#f9f9f9' : '#fff',
+                background: activeTab === 'chatbot' ? '#f9fbfd' : '#f6faff',
                 border: 'none',
-                borderBottom: activeTab === 'chatbot' ? '2px solid #008CBA' : '2px solid transparent',
-                color: activeTab === 'chatbot' ? '#008CBA' : '#333',
+                borderBottom: activeTab === 'chatbot' ? '2px solid #1976d2' : '2px solid transparent',
+                color: activeTab === 'chatbot' ? '#1976d2' : '#232946',
                 fontWeight: activeTab === 'chatbot' ? 'bold' : 'normal',
                 fontSize: '1.1em',
                 cursor: 'pointer',
@@ -228,7 +234,7 @@ function LandingPage() {
           {/* Tab Content */}
           <div style={{ flex: 1, padding: 24, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
             {activeTab === 'transcript' && (
-              <div style={{ flex: 1, overflowY: 'auto', background: '#f9f9f9', borderRadius: 8, padding: 12, minHeight: 0 }}>
+              <div style={{ flex: 1, overflowY: 'auto', background: '#f9fbfd', borderRadius: 8, padding: 12, minHeight: 0 }}>
                 <h3 style={{ marginTop: 0, color: '#555' }}>Transcript</h3>
                 {loading ? (
                   <div>Loading transcript...</div>
@@ -244,8 +250,8 @@ function LandingPage() {
                         style={{
                           marginBottom: 12,
                           cursor: 'pointer',
-                          background: idx === currentLineIdx ? '#d0f0ff' : 'transparent',
-                          color: idx === currentLineIdx ? '#007399' : '#222',
+                          background: idx === currentLineIdx ? '#e3f0ff' : 'transparent',
+                          color: idx === currentLineIdx ? '#1976d2' : '#232946',
                           borderRadius: 6,
                           padding: '4px 8px',
                           transition: 'background 0.2s, color 0.2s',
@@ -266,13 +272,35 @@ function LandingPage() {
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
                 {/* Sleek Quick Answers Header */}
                 <div style={{ marginBottom: 8, marginTop: 4 }}>
-                  <div style={{ fontSize: '1.1em', fontWeight: 700, color: '#2196f3', marginBottom: 2 }}>
+                  <div style={{ fontSize: '1.1em', fontWeight: 700, color: '#1976d2', marginBottom: 2 }}>
                     Need some quick answers <span style={{ color: '#1976d2' }}>related to this meeting?</span>
                   </div>
                   <div style={{ color: '#555', fontSize: '0.97em', marginBottom: 8 }}>
                     Here is a selection of some of the most popular prompts for you to choose from.
                   </div>
                 </div>
+                {/* Reset Chat Button */}
+                {chatHistory.length > 0 && (
+                  <button
+                    onClick={handleResetChat}
+                    style={{
+                      alignSelf: 'flex-end',
+                      marginBottom: 10,
+                      background: '#f6faff',
+                      color: '#1976d2',
+                      border: '1px solid #b3d6f7',
+                      borderRadius: 8,
+                      padding: '6px 16px',
+                      fontSize: '0.97em',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      boxShadow: '0 1px 4px rgba(25,118,210,0.04)',
+                      transition: 'background 0.18s, box-shadow 0.18s, border 0.18s',
+                    }}
+                  >
+                    Reset Chat
+                  </button>
+                )}
                 {/* Prompt grid fills all available space above input box if no chat history */}
                 {chatHistory.length === 0 && (
                   <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
@@ -384,13 +412,13 @@ function LandingPage() {
                 {/* Only show chat history if there are messages */}
                 {chatHistory.length > 0 && (
                   <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-                    <div style={{ flex: 1, overflowY: 'auto', marginBottom: 10, background: '#f5f5f5', borderRadius: 8, padding: 10, minHeight: 0 }}>
+                    <div style={{ flex: 1, overflowY: 'auto', marginBottom: 10, background: '#f6faff', borderRadius: 8, padding: 10, minHeight: 0 }}>
                       {chatHistory.map((msg, idx) => (
                         <div key={idx} style={{ marginBottom: 8, textAlign: msg.sender === 'user' ? 'right' : 'left' }}>
                           <span style={{
                             display: 'inline-block',
-                            background: msg.sender === 'user' ? '#008CBA' : '#eee',
-                            color: msg.sender === 'user' ? '#fff' : '#333',
+                            background: msg.sender === 'user' ? '#1976d2' : '#e3eaf3',
+                            color: msg.sender === 'user' ? '#fff' : '#232946',
                             borderRadius: 14,
                             padding: '7px 14px',
                             maxWidth: '80%',
@@ -400,7 +428,7 @@ function LandingPage() {
                             {msg.text}
                             {msg.timestamp !== undefined && msg.timestamp !== null && (
                               <button 
-                                style={{ marginLeft: 8, padding: '3px 8px', borderRadius: 7, border: 'none', background: '#007399', color: '#fff', cursor: 'pointer', fontSize: '0.93em' }}
+                                style={{ marginLeft: 8, padding: '3px 8px', borderRadius: 7, border: 'none', background: '#1976d2', color: '#fff', cursor: 'pointer', fontSize: '0.93em' }}
                                 onClick={() => handleSeek(msg.timestamp)}
                               >
                                 Jump to this part
@@ -413,16 +441,16 @@ function LandingPage() {
                   </div>
                 )}
                 {/* Input box always at the bottom */}
-                <form onSubmit={handleChatSubmit} style={{ display: 'flex', gap: 7, flex: '0 0 auto', background: '#fff', borderRadius: 8, boxShadow: '0 1px 3px rgba(0,0,0,0.03)', padding: '7px 7px 7px 12px', alignItems: 'center', marginTop: chatHistory.length > 0 ? 0 : 'auto' }}>
+                <form onSubmit={handleChatSubmit} style={{ display: 'flex', gap: 7, flex: '0 0 auto', background: '#fff', borderRadius: 8, boxShadow: '0 1px 3px rgba(25,118,210,0.03)', padding: '7px 7px 7px 12px', alignItems: 'center', marginTop: chatHistory.length > 0 ? 0 : 'auto' }}>
                   <input
                     id="chat-input-box"
                     type="text"
                     value={chatInput}
                     onChange={e => setChatInput(e.target.value)}
                     placeholder="Ask anything else about the video..."
-                    style={{ flex: 1, padding: 8, borderRadius: 6, border: '1px solid #ccc', fontSize: '1em', background: '#fafcff' }}
+                    style={{ flex: 1, padding: 8, borderRadius: 6, border: '1px solid #e3eaf3', fontSize: '1em', background: '#f9fbfd', color: '#232946' }}
                   />
-                  <button type="submit" style={{ padding: '8px 18px', background: '#008CBA', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 500, fontSize: '1em' }}>Send</button>
+                  <button type="submit" style={{ padding: '8px 18px', background: '#1976d2', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 500, fontSize: '1em' }}>Send</button>
                 </form>
               </div>
             )}

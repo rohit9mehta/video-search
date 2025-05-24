@@ -49,66 +49,58 @@ function AdminView() {
   };
 
   return (
-    <div className="App" style={{ fontFamily: 'Arial, sans-serif', maxWidth: '800px', margin: '0 auto', padding: '20px' }}>
-      <h1 style={{ textAlign: 'center', fontSize: '2.5em', marginBottom: '40px', color: '#333' }}>Admin View</h1>
+    <div className="App" style={{ fontFamily: 'Arial, sans-serif', maxWidth: '800px', margin: '0 auto', padding: '20px', background: '#f9fbfd', color: '#232946' }}>
+      <h1 style={{ textAlign: 'center', fontSize: '2.5em', marginBottom: '40px', color: '#1976d2', fontWeight: 700, letterSpacing: '-0.5px', background: '#f6faff', borderRadius: 12, boxShadow: '0 2px 8px rgba(25, 118, 210, 0.07)' }}>Admin View</h1>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '40px' }}>
-        <button onClick={() => navigate('/')} style={{ padding: '10px 20px', backgroundColor: '#4CAF50', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', transition: 'background-color 0.3s' }}
-          onMouseOver={(e) => e.target.style.backgroundColor = '#3e8e41'}
-          onMouseOut={(e) => e.target.style.backgroundColor = '#4CAF50'}
+        <button onClick={() => navigate('/')} style={{ padding: '10px 20px', backgroundColor: '#1976d2', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 500, boxShadow: '0 2px 8px rgba(25, 118, 210, 0.07)' }}
         >
           Go to Customer View
         </button>
-        <button onClick={handleLogout} style={{ padding: '10px 20px', backgroundColor: '#f44336', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', transition: 'background-color 0.3s' }}
-          onMouseOver={(e) => e.target.style.backgroundColor = '#d32f2f'}
-          onMouseOut={(e) => e.target.style.backgroundColor = '#f44336'}
+        <button onClick={handleLogout} style={{ padding: '10px 20px', backgroundColor: '#f44336', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 500, boxShadow: '0 2px 8px rgba(244, 67, 54, 0.07)' }}
         >
           Logout
         </button>
       </div>
-      <div className="section" style={{ marginBottom: '40px', backgroundColor: '#f9f9f9', padding: '20px', borderRadius: '10px', boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)' }}>
-        <h2 style={{ textAlign: 'center', fontSize: '1.8em', marginBottom: '20px', color: '#555' }}>Train on Channel URL</h2>
+      <div className="section clipt-card" style={{ marginBottom: '40px' }}>
+        <h2 style={{ textAlign: 'center', fontSize: '1.8em', marginBottom: '20px', color: '#232946' }}>Train on Channel URL</h2>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <textarea 
             name="channelURL" 
             value={channelUrl} 
             readOnly
-            style={{ width: '100%', padding: '10px', fontSize: '1em', borderRadius: '5px', border: '1px solid #ddd', marginBottom: '15px', minHeight: '50px', resize: 'vertical', fontFamily: 'Arial, sans-serif', backgroundColor: '#eee' }}
+            style={{ width: '100%', padding: '10px', fontSize: '1em', borderRadius: '8px', border: '1px solid #e3eaf3', marginBottom: '15px', minHeight: '50px', resize: 'vertical', fontFamily: 'Arial, sans-serif', backgroundColor: '#f6faff', color: '#232946' }}
           ></textarea>
           <button 
             type="submit"
-            style={{ padding: '12px 30px', fontSize: '1.1em', backgroundColor: '#008CBA', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', transition: 'background-color 0.3s' }}
-            onMouseOver={(e) => e.target.style.backgroundColor = '#007399'}
-            onMouseOut={(e) => e.target.style.backgroundColor = '#008CBA'}
+            style={{ padding: '12px 30px', fontSize: '1.1em', backgroundColor: '#1976d2', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 500, boxShadow: '0 2px 8px rgba(25, 118, 210, 0.07)' }}
           >
             Train Model
           </button>
         </form>
-        {message && <div className="message" style={{ marginTop: '15px', textAlign: 'center', color: message.includes('Error') ? 'red' : '#333', fontSize: '1em' }}>{message}</div>}
+        {message && <div className="message" style={{ marginTop: '15px', textAlign: 'center', color: message.includes('Error') ? 'red' : '#232946', fontSize: '1em' }}>{message}</div>}
       </div>
-      <div className="section" style={{ marginBottom: '40px', backgroundColor: '#f9f9f9', padding: '20px', borderRadius: '10px', boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)' }}>
-        <h2 style={{ textAlign: 'center', fontSize: '1.8em', marginBottom: '20px', color: '#555' }}>Add Video to Trained Model</h2>
+      <div className="section clipt-card" style={{ marginBottom: '40px' }}>
+        <h2 style={{ textAlign: 'center', fontSize: '1.8em', marginBottom: '20px', color: '#232946' }}>Add Video to Trained Model</h2>
         <form onSubmit={handleVideoSubmit} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <textarea 
             name="channelURL" 
             value={channelUrl} 
             readOnly
-            style={{ width: '100%', padding: '10px', fontSize: '1em', borderRadius: '5px', border: '1px solid #ddd', marginBottom: '15px', minHeight: '50px', resize: 'vertical', fontFamily: 'Arial, sans-serif', backgroundColor: '#eee' }}
+            style={{ width: '100%', padding: '10px', fontSize: '1em', borderRadius: '8px', border: '1px solid #e3eaf3', marginBottom: '15px', minHeight: '50px', resize: 'vertical', fontFamily: 'Arial, sans-serif', backgroundColor: '#f6faff', color: '#232946' }}
           ></textarea>
           <textarea 
             name="videoURL" 
             placeholder="Enter video URL"
-            style={{ width: '100%', padding: '10px', fontSize: '1em', borderRadius: '5px', border: '1px solid #ddd', marginBottom: '15px', minHeight: '50px', resize: 'vertical', fontFamily: 'Arial, sans-serif' }}
+            style={{ width: '100%', padding: '10px', fontSize: '1em', borderRadius: '8px', border: '1px solid #e3eaf3', marginBottom: '15px', minHeight: '50px', resize: 'vertical', fontFamily: 'Arial, sans-serif', backgroundColor: '#f9fbfd', color: '#232946' }}
           ></textarea>
           <button 
             type="submit"
-            style={{ padding: '12px 30px', fontSize: '1.1em', backgroundColor: '#008CBA', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', transition: 'background-color 0.3s' }}
-            onMouseOver={(e) => e.target.style.backgroundColor = '#007399'}
-            onMouseOut={(e) => e.target.style.backgroundColor = '#008CBA'}
+            style={{ padding: '12px 30px', fontSize: '1.1em', backgroundColor: '#1976d2', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 500, boxShadow: '0 2px 8px rgba(25, 118, 210, 0.07)' }}
           >
             Train on Video
           </button>
         </form>
-        {videoTrainMessage && <div className="message" style={{ marginTop: '15px', textAlign: 'center', color: videoTrainMessage.includes('Error') ? 'red' : '#333', fontSize: '1em' }}>{videoTrainMessage}</div>}
+        {videoTrainMessage && <div className="message" style={{ marginTop: '15px', textAlign: 'center', color: videoTrainMessage.includes('Error') ? 'red' : '#232946', fontSize: '1em' }}>{videoTrainMessage}</div>}
       </div>
     </div>
   );

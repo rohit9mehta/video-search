@@ -5,9 +5,16 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background: #f9fbfd;
+  color: #232946;
 }
 
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
+  color: #1976d2;
+}
+
+.clipt-shadow {
+  box-shadow: 0 8px 32px 0 rgba(25, 118, 210, 0.10), 0 1.5px 6px 0 rgba(25, 118, 210, 0.07);
 }

@@ -60,6 +60,46 @@ S3_REGION = "us-east-2"
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
+# --- CUSTOMER KEY MANAGEMENT ---
+CUSTOMER_KEYS_TABLE_NAME = 'CustomerKeys'
+
+def ensure_customer_keys_table_exists():
+    try:
+        dynamodb.Table(CUSTOMER_KEYS_TABLE_NAME).table_status
+        print(f"{CUSTOMER_KEYS_TABLE_NAME} table exists")
+    except Exception as e:
+        try:
+            print(f"Creating {CUSTOMER_KEYS_TABLE_NAME} table...")
+            table = dynamodb.create_table(
+                TableName=CUSTOMER_KEYS_TABLE_NAME,
+                KeySchema=[
+                    {'AttributeName': 'customer_key', 'KeyType': 'HASH'}
+                ],
+                AttributeDefinitions=[
+                    {'AttributeName': 'customer_key', 'AttributeType': 'S'}
+                ],
+                BillingMode='PAY_PER_REQUEST'
+            )
+            print(f"{CUSTOMER_KEYS_TABLE_NAME} table creation initiated")
+        except Exception as create_error:
+            print(f"Error creating table: {str(create_error)}")
+
+
+def is_valid_customer_key(customer_key, channel_url):
+    try:
+        table = dynamodb.Table(CUSTOMER_KEYS_TABLE_NAME)
+        resp = table.get_item(Key={'customer_key': customer_key})
+        item = resp.get('Item')
+        if not item:
+            return False
+        allowed_channels = item.get('allowed_channels', [])
+        return channel_url in allowed_channels
+    except Exception as e:
+        print(f"Error validating customer key: {e}")
+        return False
+
+# --- END CUSTOMER KEY MANAGEMENT ---
+
 @app.route('/')
 def home():
     return "Hello, CORS is configured!"
@@ -324,9 +364,16 @@ def train_model(demo_url = None):
         if demo_url and demo_url == "demo":
             video_urls = ["w4CMaKF_IXI", "PQtMTPhmQwM"]
             index_id = "demo-index"
+            customer_key = None
+            channel_url = "demo"
         else:
             data = request.get_json()
+            customer_key = data.get('customer_key')
             channel_url = data.get('channel_url')
+            if not customer_key or not channel_url:
+                return jsonify({"error": "customer_key and channel_url are required"}), 400
+            if not is_valid_customer_key(customer_key, channel_url):
+                return jsonify({"error": "Unauthorized: invalid customer_key for channel_url"}), 401
             print(f"Fetching videos for channel {channel_url} at {time.time() - start_time:.2f} seconds")
             video_urls = fetch_all_videos_yt(channel_url)
             print(f"Fetched {len(video_urls)} videos at {time.time() - start_time:.2f} seconds")
@@ -431,13 +478,17 @@ def query_model(demo_phrase = None, demo_url = None):
         if demo_phrase and demo_url:
             query_phrase = demo_phrase
             channel_url = demo_url
+            customer_key = None
         else:
             query_phrase = request.args.get('query_phrase')
+            channel_url = request.args.get('channel_url')
+            customer_key = request.args.get('customer_key')
+            if not customer_key or not channel_url:
+                return jsonify({"error": "customer_key and channel_url are required"}), 400
+            if not is_valid_customer_key(customer_key, channel_url):
+                return jsonify({"error": "Unauthorized: invalid customer_key for channel_url"}), 401
             if not query_phrase:
                 return jsonify({"error": "Query phrase is required"}), 400
-            channel_url = request.args.get('channel_url')
-            if not channel_url:
-                return jsonify({"error": "Channel url is required"}), 400
         index_id = sanitize_index_name(channel_url)
         PINECONE_API_KEY = get_pinecone_api_key()
         pc = Pinecone(
@@ -543,7 +594,8 @@ def ensure_table_exists():
             print("UserTokens table creation initiated")
         except Exception as create_error:
             print(f"Error creating table: {str(create_error)}")
-            # Continue anyway - we'll handle table not existing in the routes
+    # Ensure CustomerKeys table exists too
+    ensure_customer_keys_table_exists()
 
 @app.route('/api/train_video', methods=['POST'])
 def train_single_video():
@@ -551,12 +603,13 @@ def train_single_video():
         start_time = time.time()
         print(f"Starting train_single_video at {datetime.now()}")
         data = request.get_json()
+        customer_key = data.get('customer_key')
         channel_url = data.get('channel_url')
         video_url = data.get('video_url')
-        
-        if not channel_url or not video_url:
-            return jsonify({"error": "Both channel_url and video_url are required"}), 400
-            
+        if not customer_key or not channel_url or not video_url:
+            return jsonify({"error": "customer_key, channel_url, and video_url are required"}), 400
+        if not is_valid_customer_key(customer_key, channel_url):
+            return jsonify({"error": "Unauthorized: invalid customer_key for channel_url"}), 401
         print(f"Processing video {video_url} for channel {channel_url} at {time.time() - start_time:.2f} seconds")
         # Sanitize the channel URL for use as index name
         index_id = sanitize_index_name(channel_url)
