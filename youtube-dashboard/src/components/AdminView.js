@@ -7,6 +7,7 @@ function AdminView() {
   const { channelUrl, logout } = useAuth();
   const [message, setMessage] = React.useState('');
   const [videoTrainMessage, setVideoTrainMessage] = React.useState('');
+  const [customerKey, setCustomerKey] = React.useState('');
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -16,7 +17,7 @@ function AdminView() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ channel_url: channelUrl }),
+        body: JSON.stringify({ channel_url: channelUrl, customer_key: customerKey }),
       });
       const data = await response.json();
       setMessage(data.message || 'Training completed!');
@@ -34,7 +35,7 @@ function AdminView() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ channel_url: channelUrl, video_url: videoUrl }),
+        body: JSON.stringify({ channel_url: channelUrl, video_url: videoUrl, customer_key: customerKey }),
       });
       const data = await response.json();
       setVideoTrainMessage(data.message || 'Video training started!');
@@ -70,6 +71,13 @@ function AdminView() {
             readOnly
             style={{ width: '100%', padding: '10px', fontSize: '1em', borderRadius: '8px', border: '1px solid #e3eaf3', marginBottom: '15px', minHeight: '50px', resize: 'vertical', fontFamily: 'Arial, sans-serif', backgroundColor: '#f6faff', color: '#232946' }}
           ></textarea>
+          <textarea
+            name="customerKey"
+            value={customerKey}
+            onChange={e => setCustomerKey(e.target.value)}
+            placeholder="Enter customer key"
+            style={{ width: '100%', padding: '10px', fontSize: '1em', borderRadius: '8px', border: '1px solid #e3eaf3', marginBottom: '15px', minHeight: '30px', resize: 'vertical', fontFamily: 'Arial, sans-serif', backgroundColor: '#f9fbfd', color: '#232946' }}
+          />
           <button 
             type="submit"
             style={{ padding: '12px 30px', fontSize: '1.1em', backgroundColor: '#1976d2', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 500, boxShadow: '0 2px 8px rgba(25, 118, 210, 0.07)' }}
@@ -88,6 +96,13 @@ function AdminView() {
             readOnly
             style={{ width: '100%', padding: '10px', fontSize: '1em', borderRadius: '8px', border: '1px solid #e3eaf3', marginBottom: '15px', minHeight: '50px', resize: 'vertical', fontFamily: 'Arial, sans-serif', backgroundColor: '#f6faff', color: '#232946' }}
           ></textarea>
+          <textarea
+            name="customerKey"
+            value={customerKey}
+            onChange={e => setCustomerKey(e.target.value)}
+            placeholder="Enter customer key"
+            style={{ width: '100%', padding: '10px', fontSize: '1em', borderRadius: '8px', border: '1px solid #e3eaf3', marginBottom: '15px', minHeight: '30px', resize: 'vertical', fontFamily: 'Arial, sans-serif', backgroundColor: '#f9fbfd', color: '#232946' }}
+          />
           <textarea 
             name="videoURL" 
             placeholder="Enter video URL"

@@ -6,6 +6,10 @@ function CustomerView() {
   const [queryResults, setQueryResults] = React.useState([]);
   const backendUrl = 'https://aivideo.planeteria.com';
 
+  // Store last used channelUrl and queryPhrase for use in rendering
+  const [lastChannelUrl, setLastChannelUrl] = React.useState('');
+  const [lastQueryPhrase, setLastQueryPhrase] = React.useState('');
+
   const handleQuerySubmit = async (event) => {
     event.preventDefault();
     const queryPhrase = event.target.queryPhrase.value;
@@ -23,7 +27,15 @@ function CustomerView() {
         return;
       }
       const results = await response.json();
+      // Store results in localStorage with a key based on channelUrl and queryPhrase
+      const queryKey = `queryResults_${channelUrl}_${queryPhrase}`;
+      localStorage.setItem(queryKey, JSON.stringify(results));
       setQueryResults(results || []);
+      // Store the last used queryKey for convenience (optional)
+      localStorage.setItem('lastQueryKey', queryKey);
+      // Store last used channelUrl and queryPhrase in state for rendering
+      setLastChannelUrl(channelUrl);
+      setLastQueryPhrase(queryPhrase);
     } catch (error) {
       setQueryResults([{ error: "Error occurred during query. Please try again." }]);
     }
@@ -85,50 +97,54 @@ function CustomerView() {
               <ul style={{ listStyleType: 'none', padding: 0 }}>
                 {results
                   .sort((a, b) => (b.metadata?.score || b.score || 0) - (a.metadata?.score || a.score || 0))
-                  .map((result, index) => (
-                    <li key={index} style={{ padding: '15px', borderBottom: index < results.length - 1 ? '1px solid #e3eaf3' : 'none', backgroundColor: index % 2 === 0 ? '#f9fbfd' : '#f6faff', borderRadius: '8px' }}>
-                      {result.error ? (
-                        <span style={{ color: 'red', fontSize: '1em' }}>{result.error}</span>
-                      ) : (
-                        <>
-                          <div style={{ marginBottom: '10px', fontSize: '1em' }}>
-                            <b style={{ color: '#232946' }}>Match:</b> <span style={{ color: '#555' }}>{result.metadata?.text || result.text || 'Not available'}</span>
-                          </div>
-                          <div style={{ fontSize: '0.95em' }}>
-                            <b style={{ color: '#232946' }}>Video URL:</b>{' '}
-                            {(() => {
-                              const ytUrl = result.metadata?.url || '';
-                              let landingUrl = 'Not available';
-                              if (ytUrl && ytUrl.includes('youtube.com/watch')) {
-                                const match = ytUrl.match(/[?&]v=([^&]+).*?[&]t=(\d+)/);
-                                if (match) {
-                                  const videoId = match[1];
-                                  const t = match[2];
-                                  landingUrl = `https://aivideo.planeteria.com/${videoId}?t=${t}`;
-                                } else {
-                                  // fallback: try to extract videoId only
-                                  const idMatch = ytUrl.match(/[?&]v=([^&]+)/);
-                                  if (idMatch) {
-                                    const videoId = idMatch[1];
-                                    landingUrl = `https://aivideo.planeteria.com/${videoId}`;
+                  .map((result, index) => {
+                    // Generate queryKey for this query using lastChannelUrl and lastQueryPhrase
+                    const queryKey = `queryResults_${lastChannelUrl}_${lastQueryPhrase}`;
+                    return (
+                      <li key={index} style={{ padding: '15px', borderBottom: index < results.length - 1 ? '1px solid #e3eaf3' : 'none', backgroundColor: index % 2 === 0 ? '#f9fbfd' : '#f6faff', borderRadius: '8px' }}>
+                        {result.error ? (
+                          <span style={{ color: 'red', fontSize: '1em' }}>{result.error}</span>
+                        ) : (
+                          <>
+                            <div style={{ marginBottom: '10px', fontSize: '1em' }}>
+                              <b style={{ color: '#232946' }}>Match:</b> <span style={{ color: '#555' }}>{result.metadata?.text || result.text || 'Not available'}</span>
+                            </div>
+                            <div style={{ fontSize: '0.95em' }}>
+                              <b style={{ color: '#232946' }}>Video URL:</b>{' '}
+                              {(() => {
+                                const ytUrl = result.metadata?.url || '';
+                                let landingUrl = 'Not available';
+                                if (ytUrl && ytUrl.includes('youtube.com/watch')) {
+                                  const match = ytUrl.match(/[?&]v=([^&]+).*?[&]t=(\d+)/);
+                                  if (match) {
+                                    const videoId = match[1];
+                                    const t = match[2];
+                                    landingUrl = `https://aivideo.planeteria.com/${videoId}?t=${t}&queryKey=${encodeURIComponent(queryKey)}`;
+                                  } else {
+                                    // fallback: try to extract videoId only
+                                    const idMatch = ytUrl.match(/[?&]v=([^&]+)/);
+                                    if (idMatch) {
+                                      const videoId = idMatch[1];
+                                      landingUrl = `https://aivideo.planeteria.com/${videoId}?queryKey=${encodeURIComponent(queryKey)}`;
+                                    }
                                   }
                                 }
-                              }
-                              return (
-                                <a href={landingUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2', textDecoration: 'none', transition: 'color 0.2s' }}
-                                  onMouseOver={e => e.target.style.color = '#005f73'}
-                                  onMouseOut={e => e.target.style.color = '#1976d2'}
-                                >
-                                  {landingUrl}
-                                </a>
-                              );
-                            })()}
-                          </div>
-                          {result.metadata?.score && <div style={{ fontSize: '0.9em', color: '#777', marginTop: '5px' }}><b>Score:</b> {result.metadata.score.toFixed(2)}</div>}
-                        </>
-                      )}
-                    </li>
-                  ))}
+                                return (
+                                  <a href={landingUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2', textDecoration: 'none', transition: 'color 0.2s' }}
+                                    onMouseOver={e => e.target.style.color = '#005f73'}
+                                    onMouseOut={e => e.target.style.color = '#1976d2'}
+                                  >
+                                    {landingUrl}
+                                  </a>
+                                );
+                              })()}
+                            </div>
+                            {result.metadata?.score && <div style={{ fontSize: '0.9em', color: '#777', marginTop: '5px' }}><b>Score:</b> {result.metadata.score.toFixed(2)}</div>}
+                          </>
+                        )}
+                      </li>
+                    );
+                  })}
               </ul>
             </div>
           ))

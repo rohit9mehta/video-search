@@ -25,6 +25,85 @@ function LandingPage() {
   // Add shouldAutoPlay state
   const [shouldAutoPlay, setShouldAutoPlay] = useState(false);
 
+  // --- Query Results Navigation State ---
+  // Parse queryKey and t from URL
+  function getQueryKeyFromQuery() {
+    const params = new URLSearchParams(location.search);
+    return params.get('queryKey');
+  }
+  function getTimestampFromQuery() {
+    const params = new URLSearchParams(location.search);
+    const t = params.get('t');
+    if (t && !isNaN(Number(t))) {
+      return Number(t);
+    }
+    return null;
+  }
+
+  const queryKey = getQueryKeyFromQuery();
+  const initialTimestamp = getTimestampFromQuery();
+
+  // State for all timestamps and current index
+  const [videoTimestamps, setVideoTimestamps] = useState([]); // [{start, text, ...}]
+  const [currentTimestampIdx, setCurrentTimestampIdx] = useState(null);
+
+  // Load query results from localStorage and extract timestamps for this video
+  useEffect(() => {
+    if (!queryKey) return;
+    try {
+      const results = JSON.parse(localStorage.getItem(queryKey) || '[]');
+      // Filter for this videoId and extract timestamp info
+      const filtered = results.filter(r => {
+        let vid = r.metadata?.video_id;
+        if (!vid && r.metadata?.url) {
+          const match = r.metadata.url.match(/[?&]v=([^&]+)/);
+          if (match) vid = match[1];
+        }
+        return vid === VIDEO_ID;
+      });
+      // Sort by timestamp (start)
+      const sorted = filtered
+        .map(r => ({
+          ...r,
+          start: r.metadata?.start || r.start || (() => {
+            // fallback: try to parse from url
+            const url = r.metadata?.url || '';
+            const tMatch = url.match(/[?&]t=(\d+)/);
+            return tMatch ? parseInt(tMatch[1], 10) : 0;
+          })(),
+          text: r.metadata?.text || r.text || '',
+        }))
+        .sort((a, b) => a.start - b.start);
+      setVideoTimestamps(sorted);
+      // Find the index of the initial timestamp
+      if (initialTimestamp !== null) {
+        const idx = sorted.findIndex(r => Math.abs(r.start - initialTimestamp) < 2); // allow small offset
+        setCurrentTimestampIdx(idx >= 0 ? idx : 0);
+      } else {
+        setCurrentTimestampIdx(sorted.length > 0 ? 0 : null);
+      }
+    } catch (e) {
+      setVideoTimestamps([]);
+      setCurrentTimestampIdx(null);
+    }
+    // eslint-disable-next-line
+  }, [queryKey, VIDEO_ID]);
+
+  // When currentTimestampIdx changes, seek video
+  useEffect(() => {
+    if (
+      currentTimestampIdx !== null &&
+      videoTimestamps.length > 0 &&
+      playerRef.current
+    ) {
+      setShouldAutoPlay(true);
+      setTimeout(() => {
+        playerRef.current.seekTo(videoTimestamps[currentTimestampIdx].start, 'seconds');
+      }, 500);
+    }
+    // eslint-disable-next-line
+  }, [currentTimestampIdx]);
+
   // Fetch video title from YouTube oEmbed
   useEffect(() => {
     fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(YT_URL)}&format=json`)
@@ -70,23 +149,16 @@ function LandingPage() {
     }
   }, [currentLineIdx, loading]);
 
-  // Parse t= from query string
-  function getTimestampFromQuery() {
-    const params = new URLSearchParams(location.search);
-    const t = params.get('t');
-    if (t && !isNaN(Number(t))) {
-      return Number(t);
-    }
-    return null;
-  }
-  // Seek to timestamp on mount if t param is present
+  // Seek to timestamp on mount if t param is present (if not using navigation)
   useEffect(() => {
-    const t = getTimestampFromQuery();
-    if (t !== null && playerRef.current) {
-      setShouldAutoPlay(true);
-      setTimeout(() => {
-        playerRef.current.seekTo(t, 'seconds');
-      }, 500);
+    if (!queryKey) {
+      const t = initialTimestamp;
+      if (t !== null && playerRef.current) {
+        setShouldAutoPlay(true);
+        setTimeout(() => {
+          playerRef.current.seekTo(t, 'seconds');
+        }, 500);
+      }
     }
     // eslint-disable-next-line
   }, []);
@@ -131,6 +203,22 @@ function LandingPage() {
   const handleResetChat = () => {
     setChatHistory([]);
     setChatInput('');
+  };
+
+  // --- Timestamp Navigation Handlers ---
+  const handlePrevTimestamp = () => {
+    if (currentTimestampIdx !== null && currentTimestampIdx > 0) {
+      setCurrentTimestampIdx(currentTimestampIdx - 1);
+    }
+  };
+  const handleNextTimestamp = () => {
+    if (
+      currentTimestampIdx !== null &&
+      videoTimestamps.length > 0 &&
+      currentTimestampIdx < videoTimestamps.length - 1
+    ) {
+      setCurrentTimestampIdx(currentTimestampIdx + 1);
+    }
   };
 
   return (
@@ -183,6 +271,16 @@ function LandingPage() {
             style={{ borderRadius: 0, boxShadow: 'none', background: '#232946' }}
             onProgress={({ playedSeconds }) => setCurrentTime(playedSeconds)}
           />
+          {/* Timestamp Navigation Controls */}
+          {videoTimestamps.length > 0 && currentTimestampIdx !== null && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 16, background: '#f6faff', padding: '10px 0', borderBottom: '1px solid #e3eaf3' }}>
+              <button onClick={handlePrevTimestamp} disabled={currentTimestampIdx === 0} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: currentTimestampIdx === 0 ? '#e3eaf3' : '#1976d2', color: currentTimestampIdx === 0 ? '#888' : '#fff', fontWeight: 500, cursor: currentTimestampIdx === 0 ? 'not-allowed' : 'pointer' }}>Previous timestamp</button>
+              <span style={{ fontSize: '1.1em', color: '#1976d2', fontWeight: 600 }}>
+                {new Date(videoTimestamps[currentTimestampIdx].start * 1000).toISOString().substr(14, 5)}
+              </span>
+              <button onClick={handleNextTimestamp} disabled={currentTimestampIdx === videoTimestamps.length - 1} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: currentTimestampIdx === videoTimestamps.length - 1 ? '#e3eaf3' : '#1976d2', color: currentTimestampIdx === videoTimestamps.length - 1 ? '#888' : '#fff', fontWeight: 500, cursor: currentTimestampIdx === videoTimestamps.length - 1 ? 'not-allowed' : 'pointer' }}>Next timestamp</button>
+            </div>
+          )}
           <div style={{ background: '#f6faff', color: '#232946', padding: '18px 24px', borderBottom: '1px solid #e3eaf3', fontSize: '1.1em', borderRadius: '0 0 12px 12px' }}>
             <h3 style={{ margin: '0 0 8px 0', color: '#1976d2' }}>Video Summary</h3>
             {summary === null

@@ -2,16 +2,13 @@ from typing import Dict
 
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
-# import whisper
-# import torch
 from pytubefix import YouTube
-# import yt_dlp
 from getpass import getpass
 from flask import Flask, redirect, request, session, url_for, jsonify
 from flask_cors import CORS
 import scrapetube
 import boto3
-import pinecone  # !pip install pinecone-client
+import pinecone
 import os
 from pinecone import Pinecone, ServerlessSpec
 import ssl
@@ -33,7 +30,7 @@ import openai
 
 app = Flask(__name__)
 app.logger.addHandler(logging.StreamHandler(sys.stdout))
-# Add file handler for logging
+
 log_file_handler = logging.FileHandler('app.log')
 log_file_handler.setLevel(logging.DEBUG)
 app.logger.addHandler(log_file_handler)
@@ -284,9 +281,6 @@ class EndpointHandler():
         except ValueError as e:
             print(f"Invalid timestamp format: {timestamp}")
             return 0  # Default to 0 if invalid format
-
-
-# payload = {"video_urls": ["https://www.youtube.com/watch?v=w4CMaKF_IXI", "https://www.youtube.com/watch?v=PQtMTPhmQwM"], "trying_live": True} # I Tried Every Fast Food Chicken Tender In America
 
 def upload_transcripts_to_vector_db(transcripts_for_upload, pinecone_index, sentence_transformer_model, batch_size=64):
     # Collect enriched segments by video_id for S3 upload
@@ -810,15 +804,3 @@ def generate_and_upload_summary(video_id):
 if __name__ == '__main__':
     ensure_table_exists()
     app.run(host='0.0.0.0', port=5000, debug=True)
-# if __name__ == '__main__':
-#     app.run(port=8080, debug=True)
-# with app.app_context():
-#     train_model(demo_url="demo")
-#     print(query_model(demo_phrase="maple syrup", demo_url="demo"))
-# print("BREAK")
-# print(query("crispy exterior", channel_url="demo"))
-
-
-
-
-
