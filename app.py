@@ -27,6 +27,10 @@ from youtube_transcript_api.proxies import WebshareProxyConfig
 from threading import Thread
 from dotenv import load_dotenv
 import openai
+import pdfplumber
+import hashlib
+import io
+import fitz  # PyMuPDF
 
 app = Flask(__name__)
 app.logger.addHandler(logging.StreamHandler(sys.stdout))
@@ -360,10 +364,23 @@ def train_model(demo_url = None):
             index_id = "demo-index"
             customer_key = None
             channel_url = "demo"
+            pdfs_by_video = {}
         else:
-            data = request.get_json()
-            customer_key = data.get('customer_key')
-            channel_url = data.get('channel_url')
+            if request.content_type and request.content_type.startswith('multipart/form-data'):
+                customer_key = request.form.get('customer_key')
+                channel_url = request.form.get('channel_url')
+                # Parse pdfs[VIDEO_ID] fields
+                pdfs_by_video = {}
+                for key in request.files:
+                    if key.startswith('pdfs[') and key.endswith(']'):
+                        video_id = key[5:-1]
+                        pdfs_by_video.setdefault(video_id, []).append(request.files[key])
+            else:
+                data = request.get_json()
+                customer_key = data.get('customer_key')
+                channel_url = data.get('channel_url')
+                # For JSON, expect { video_id: [pdf_url, ...] }
+                pdfs_by_video = data.get('pdfs_by_video', {})
             if not customer_key or not channel_url:
                 return jsonify({"error": "customer_key and channel_url are required"}), 400
             if not is_valid_customer_key(customer_key, channel_url):
@@ -373,21 +390,18 @@ def train_model(demo_url = None):
             print(f"Fetched {len(video_urls)} videos at {time.time() - start_time:.2f} seconds")
             # Sanitize the channel URL for use as index name
             index_id = sanitize_index_name(channel_url)
-            
         print(f"Using Pinecone index name: {index_id} at {time.time() - start_time:.2f} seconds")  # Debug print
-        
         # filter out already processed videos
         new_videos = [url for url in video_urls if url not in PROCESSED_VIDEOS]
         print(f"Filtered to {len(new_videos)} new videos at {time.time() - start_time:.2f} seconds")
         if not new_videos:
             print(f"No new videos to process, returning at {time.time() - start_time:.2f} seconds")
             return jsonify({"message": "No new videos to process"}), 200
-            
         # Process each video asynchronously
         print(f"Starting asynchronous processing for {len(new_videos)} videos at {time.time() - start_time:.2f} seconds")
         handler = EndpointHandler(path="")
         payload = {"video_urls": new_videos}
-        def process_videos():
+        def process_videos_and_pdfs():
             try:
                 process_start = time.time()
                 print(f"Background thread started at {datetime.now()}")
@@ -432,6 +446,107 @@ def train_model(demo_url = None):
                 pinecone_index = pc.Index(index_id)
                 print(f"Uploading data to Pinecone at {time.time() - process_start:.2f} seconds")
                 upload_transcripts_to_vector_db(processed_data["encoded_segments"], pinecone_index, handler.sentence_transformer_model)
+                # --- PDF PROCESSING ---
+                for video_id in new_videos:
+                    video_id = video_id.split("v=")[-1] if "v=" in video_id else video_id
+                    pdf_files = pdfs_by_video.get(video_id, [])
+                    # If JSON, pdf_files are URLs (now implemented: download and process)
+                    print(f"pdf_files: {pdf_files}")
+                    for pdf_file in pdf_files:
+                        if isinstance(pdf_file, str):
+                            pdf_url = pdf_file
+                            if not pdf_url.lower().endswith('.pdf'):
+                                print(f"Skipping non-PDF URL: {pdf_url}")
+                                continue
+                            try:
+                                resp = requests.get(pdf_url)
+                                if resp.status_code != 200:
+                                    print(f"Failed to download PDF from {pdf_url}: {resp.status_code}")
+                                    continue
+                                pdf_bytes = resp.content
+                                pdf_name = pdf_url.split('/')[-1]
+                            except Exception as e:
+                                print(f"Error downloading PDF from {pdf_url}: {e}")
+                                continue
+                        else:
+                            pdf_name = pdf_file.filename
+                            pdf_bytes = pdf_file.read()
+                        pdf_id = hashlib.sha256(pdf_bytes).hexdigest()[:16]
+                        s3_pdf_key = f"pdfs/{video_id}/{pdf_id}.pdf"
+                        # Upload original PDF to S3
+                        try:
+                            s3_client.put_object(
+                                Bucket=S3_BUCKET_NAME,
+                                Key=s3_pdf_key,
+                                Body=pdf_bytes,
+                                ContentType='application/pdf'
+                            )
+                            print(f"Uploaded PDF to s3://{S3_BUCKET_NAME}/{s3_pdf_key}")
+                        except Exception as e:
+                            print(f"Error uploading PDF to S3: {e}")
+                            continue
+                        # Extract and segment PDF
+                        pdf_segments = []
+                        try:
+                            pages = extract_pdf_text_pymupdf(pdf_bytes)
+                            for page_num, text in enumerate(pages, 1):
+                                if not text.strip():
+                                    continue
+                                chunk_size = 512
+                                chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+                                for chunk_idx, chunk in enumerate(chunks):
+                                    print(f"PDF segment (page {page_num}, chunk {chunk_idx}): {chunk[:100]}")
+                                    seg_id = f"{pdf_id}-p{page_num}-c{chunk_idx}"
+                                    pdf_segments.append({
+                                        "id": seg_id,
+                                        "source_type": "pdf",
+                                        "pdf_id": pdf_id,
+                                        "pdf_name": pdf_name,
+                                        "video_id": video_id,
+                                        "page_number": page_num,
+                                        "chunk_number": chunk_idx,
+                                        "text": chunk,
+                                        "citation": f"PDF: {pdf_name}, page {page_num}",
+                                    })
+                        except Exception as e:
+                            print(f"Error extracting text from PDF: {e}")
+                            continue
+                        # Encode PDF segments
+                        if pdf_segments:
+                            for batch_start in range(0, len(pdf_segments), 64):
+                                batch = pdf_segments[batch_start:batch_start+64]
+                                batch_text = [seg['text'] for seg in batch]
+                                batch_vectors = handler.sentence_transformer_model.encode(batch_text).tolist()
+                                for i, seg in enumerate(batch):
+                                    seg['embedding'] = batch_vectors[i]
+                            # Upsert to Pinecone
+                            to_upsert = [
+                                (seg['id'], seg['embedding'], {
+                                    'source_type': seg['source_type'],
+                                    'pdf_id': seg['pdf_id'],
+                                    'pdf_name': seg['pdf_name'],
+                                    'video_id': seg['video_id'],
+                                    'page_number': seg['page_number'],
+                                    'chunk_number': seg['chunk_number'],
+                                    'citation': seg['citation'],
+                                    'text': seg['text'],
+                                })
+                                for seg in pdf_segments
+                            ]
+                            pinecone_index.upsert(to_upsert)
+                            # Store enriched PDF segments in S3
+                            s3_pdf_seg_key = f"pdf_segments/{video_id}/{pdf_id}.json"
+                            try:
+                                s3_client.put_object(
+                                    Bucket=S3_BUCKET_NAME,
+                                    Key=s3_pdf_seg_key,
+                                    Body=json.dumps(pdf_segments),
+                                    ContentType='application/json'
+                                )
+                                print(f"Uploaded PDF segments to s3://{S3_BUCKET_NAME}/{s3_pdf_seg_key}")
+                            except Exception as e:
+                                print(f"Error uploading PDF segments to S3: {e}")
+                # --- END PDF PROCESSING ---
                 # Generate and upload summary for each video
                 for video_id in new_videos:
                     generate_and_upload_summary(video_id)
@@ -442,7 +557,8 @@ def train_model(demo_url = None):
                 print(f"Error in background processing: {str(e)}")
                 import traceback
                 print(f"Traceback in background: {traceback.format_exc()}")
-        Thread(target=process_videos).start()
+        import io
+        Thread(target=process_videos_and_pdfs).start()
         print(f"Response returned at {time.time() - start_time:.2f} seconds")
         return jsonify({
             "message": f"Processing started for {len(new_videos)} new video(s)."
@@ -516,17 +632,28 @@ def query_model(demo_phrase = None, demo_url = None):
                             cleaned_match[key] = ""
                         else:
                             cleaned_match[key] = value
-                    # Round down the timestamp in the URL if it exists in metadata
-                    if 'metadata' in cleaned_match and 'url' in cleaned_match['metadata']:
-                        url = cleaned_match['metadata']['url']
+                    # --- Citation logic for PDF and video ---
+                    meta = cleaned_match.get('metadata', {})
+                    if meta.get('source_type') == 'pdf':
+                        pdf_name = meta.get('pdf_name', '')
+                        page_number = meta.get('page_number', '')
+                        cleaned_match['citation'] = f"PDF: {pdf_name}, page {page_number}"
+                    elif 'url' in meta:
+                        url = meta['url']
                         if '&t=' in url:
                             try:
                                 timestamp_str = url.split('&t=')[1]
                                 timestamp_float = float(timestamp_str)
                                 rounded_timestamp = int(timestamp_float)
                                 cleaned_match['metadata']['url'] = url.split('&t=')[0] + '&t=' + str(rounded_timestamp)
+                                cleaned_match['citation'] = cleaned_match['metadata']['url']
                             except (ValueError, IndexError):
                                 app.logger.debug(f"Failed to parse or round timestamp in URL: {url}")
+                                cleaned_match['citation'] = url
+                        else:
+                            cleaned_match['citation'] = url
+                    else:
+                        cleaned_match['citation'] = ""
                     cleaned_matches.append(cleaned_match)
                     app.logger.debug(f"Successfully converted match to dict: {cleaned_match}")
                 except Exception as e:
@@ -539,17 +666,28 @@ def query_model(demo_phrase = None, demo_url = None):
                         cleaned_match[key] = ""
                     else:
                         cleaned_match[key] = value
-                # Round down the timestamp in the URL if it exists in metadata
-                if 'metadata' in cleaned_match and 'url' in cleaned_match['metadata']:
-                    url = cleaned_match['metadata']['url']
+                # --- Citation logic for PDF and video ---
+                meta = cleaned_match.get('metadata', {})
+                if meta.get('source_type') == 'pdf':
+                    pdf_name = meta.get('pdf_name', '')
+                    page_number = meta.get('page_number', '')
+                    cleaned_match['citation'] = f"PDF: {pdf_name}, page {page_number}"
+                elif 'url' in meta:
+                    url = meta['url']
                     if '&t=' in url:
                         try:
                             timestamp_str = url.split('&t=')[1]
                             timestamp_float = float(timestamp_str)
                             rounded_timestamp = int(timestamp_float)
                             cleaned_match['metadata']['url'] = url.split('&t=')[0] + '&t=' + str(rounded_timestamp)
+                            cleaned_match['citation'] = cleaned_match['metadata']['url']
                         except (ValueError, IndexError):
                             app.logger.debug(f"Failed to parse or round timestamp in URL: {url}")
+                            cleaned_match['citation'] = url
+                    else:
+                        cleaned_match['citation'] = url
+                else:
+                    cleaned_match['citation'] = ""
                 cleaned_matches.append(cleaned_match)
         app.logger.debug(f"Number of cleaned matches: {len(cleaned_matches)}")
         return jsonify(cleaned_matches)
@@ -596,10 +734,18 @@ def train_single_video():
     try:
         start_time = time.time()
         print(f"Starting train_single_video at {datetime.now()}")
-        data = request.get_json()
-        customer_key = data.get('customer_key')
-        channel_url = data.get('channel_url')
-        video_url = data.get('video_url')
+        # Accept both JSON and multipart/form-data
+        if request.content_type and request.content_type.startswith('multipart/form-data'):
+            customer_key = request.form.get('customer_key')
+            channel_url = request.form.get('channel_url')
+            video_url = request.form.get('video_url')
+            pdf_files = request.files.getlist('pdfs')  # List of FileStorage
+        else:
+            data = request.get_json()
+            customer_key = data.get('customer_key')
+            channel_url = data.get('channel_url')
+            video_url = data.get('video_url')
+            pdf_files = data.get('pdf_files', [])  # <-- FIX: get from JSON!
         if not customer_key or not channel_url or not video_url:
             return jsonify({"error": "customer_key, channel_url, and video_url are required"}), 400
         if not is_valid_customer_key(customer_key, channel_url):
@@ -608,33 +754,27 @@ def train_single_video():
         # Sanitize the channel URL for use as index name
         index_id = sanitize_index_name(channel_url)
         print(f"Using Pinecone index name: {index_id} at {time.time() - start_time:.2f} seconds")
-        
         # Extract video ID from URL if necessary
         video_id = video_url.split("v=")[-1] if "v=" in video_url else video_url
-        
         # Check if video is already processed
         if video_id in PROCESSED_VIDEOS:
             print(f"Video {video_id} already processed, returning at {time.time() - start_time:.2f} seconds")
             return jsonify({"message": "Video already processed"}), 200
-            
-        # Process the video asynchronously
+        # Process the video and PDFs asynchronously
         print(f"Starting processing for video {video_id} at {time.time() - start_time:.2f} seconds")
         handler = EndpointHandler(path="")
         payload = {"video_urls": [video_url]}
-        
-        def process_single_video():
+        def process_single_video_and_pdfs(pdf_files=pdf_files):
             try:
                 process_start = time.time()
                 print(f"Background thread for single video started at {datetime.now()}")
                 processed_data = handler(payload)
                 print(f"Video processed in background at {time.time() - process_start:.2f} seconds")
-                
                 # Pinecone integration
                 dimensions = handler.sentence_transformer_model.get_sentence_embedding_dimension()
                 PINECONE_API_KEY = get_pinecone_api_key()
                 pc = Pinecone(api_key=PINECONE_API_KEY)
                 existing_indexes = pc.list_indexes()
-                
                 if index_id not in existing_indexes:
                     print(f"Index {index_id} does not exist. Creating new index at {time.time() - process_start:.2f} seconds")
                     try:
@@ -658,10 +798,106 @@ def train_single_video():
                         print(f"Index {index_id} is compatible. Proceeding... at {time.time() - process_start:.2f} seconds")
                     else:
                         print(f"WARNING: Index {index_id} exists but with incompatible settings (dimension: {index_info.dimension}, metric: {index_info.metric}). This may cause issues. at {time.time() - process_start:.2f} seconds")
-                
                 pinecone_index = pc.Index(index_id)
                 print(f"Uploading data to Pinecone at {time.time() - process_start:.2f} seconds")
                 upload_transcripts_to_vector_db(processed_data["encoded_segments"], pinecone_index, handler.sentence_transformer_model)
+                # --- PDF PROCESSING ---
+                print(f"PDF files to process: {pdf_files}")
+                for pdf_file in pdf_files:
+                    if isinstance(pdf_file, str):
+                        pdf_url = pdf_file
+                        if not pdf_url.lower().endswith('.pdf'):
+                            print(f"Skipping non-PDF URL: {pdf_url}")
+                            continue
+                        try:
+                            resp = requests.get(pdf_url)
+                            if resp.status_code != 200:
+                                print(f"Failed to download PDF from {pdf_url}: {resp.status_code}")
+                                continue
+                            pdf_bytes = resp.content
+                            pdf_name = pdf_url.split('/')[-1]
+                        except Exception as e:
+                            print(f"Error downloading PDF from {pdf_url}: {e}")
+                            continue
+                    else:
+                        pdf_name = pdf_file.filename
+                        pdf_bytes = pdf_file.read()
+                    pdf_id = hashlib.sha256(pdf_bytes).hexdigest()[:16]
+                    s3_pdf_key = f"pdfs/{video_id}/{pdf_id}.pdf"
+                    # Upload original PDF to S3
+                    try:
+                        s3_client.put_object(
+                            Bucket=S3_BUCKET_NAME,
+                            Key=s3_pdf_key,
+                            Body=pdf_bytes,
+                            ContentType='application/pdf'
+                        )
+                        print(f"Uploaded PDF to s3://{S3_BUCKET_NAME}/{s3_pdf_key}")
+                    except Exception as e:
+                        print(f"Error uploading PDF to S3: {e}")
+                        continue
+                    # Extract and segment PDF
+                    pdf_segments = []
+                    try:
+                        pages = extract_pdf_text_pymupdf(pdf_bytes)
+                        for page_num, text in enumerate(pages, 1):
+                            if not text.strip():
+                                continue
+                            chunk_size = 512
+                            chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+                            for chunk_idx, chunk in enumerate(chunks):
+                                print(f"PDF segment (page {page_num}, chunk {chunk_idx}): {chunk[:100]}")
+                                seg_id = f"{pdf_id}-p{page_num}-c{chunk_idx}"
+                                pdf_segments.append({
+                                    "id": seg_id,
+                                    "source_type": "pdf",
+                                    "pdf_id": pdf_id,
+                                    "pdf_name": pdf_name,
+                                    "video_id": video_id,
+                                    "page_number": page_num,
+                                    "chunk_number": chunk_idx,
+                                    "text": chunk,
+                                    "citation": f"PDF: {pdf_name}, page {page_num}",
+                                })
+                    except Exception as e:
+                        print(f"Error extracting text from PDF: {e}")
+                        continue
+                    # Encode PDF segments
+                    if pdf_segments:
+                        for batch_start in range(0, len(pdf_segments), 64):
+                            batch = pdf_segments[batch_start:batch_start+64]
+                            batch_text = [seg['text'] for seg in batch]
+                            batch_vectors = handler.sentence_transformer_model.encode(batch_text).tolist()
+                            for i, seg in enumerate(batch):
+                                seg['embedding'] = batch_vectors[i]
+                        # Upsert to Pinecone
+                        to_upsert = [
+                            (seg['id'], seg['embedding'], {
+                                'source_type': seg['source_type'],
+                                'pdf_id': seg['pdf_id'],
+                                'pdf_name': seg['pdf_name'],
+                                'video_id': seg['video_id'],
+                                'page_number': seg['page_number'],
+                                'chunk_number': seg['chunk_number'],
+                                'citation': seg['citation'],
+                                'text': seg['text'],
+                            })
+                            for seg in pdf_segments
+                        ]
+                        pinecone_index.upsert(to_upsert)
+                        # Store enriched PDF segments in S3
+                        s3_pdf_seg_key = f"pdf_segments/{video_id}/{pdf_id}.json"
+                        try:
+                            s3_client.put_object(
+                                Bucket=S3_BUCKET_NAME,
+                                Key=s3_pdf_seg_key,
+                                Body=json.dumps(pdf_segments),
+                                ContentType='application/json'
+                            )
+                            print(f"Uploaded PDF segments to s3://{S3_BUCKET_NAME}/{s3_pdf_seg_key}")
+                        except Exception as e:
+                            print(f"Error uploading PDF segments to S3: {e}")
+                # --- END PDF PROCESSING ---
                 generate_and_upload_summary(video_id)
                 # Update processed videos
                 PROCESSED_VIDEOS.add(video_id)
@@ -670,8 +906,8 @@ def train_single_video():
                 print(f"Error in background processing of single video: {str(e)}")
                 import traceback
                 print(f"Traceback in background: {traceback.format_exc()}")
-        
-        Thread(target=process_single_video).start()
+        import io
+        Thread(target=process_single_video_and_pdfs).start()
         print(f"Response returned at {time.time() - start_time:.2f} seconds")
         return jsonify({
             "message": f"Processing started for video {video_id}."
@@ -800,6 +1036,21 @@ def generate_and_upload_summary(video_id):
         print(f"Summary uploaded to s3://{S3_BUCKET_NAME}/{summary_key}")
     except Exception as e:
         print(f"Error generating/uploading summary for {video_id}: {e}")
+
+def extract_pdf_text_pymupdf(pdf_bytes):
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    all_pages = []
+    for page in doc:
+        text = page.get_text()
+        all_pages.append(text)
+    return all_pages  # List of strings, one per page
+
+def print_index_info(pc, index_id):
+    try:
+        index_info = pc.describe_index(index_id)
+        print(f"Index {index_id} info: dimension={index_info.dimension}, metric={index_info.metric}")
+    except Exception as e:
+        print(f"Could not retrieve index info for {index_id}: {e}")
 
 if __name__ == '__main__':
     ensure_table_exists()
